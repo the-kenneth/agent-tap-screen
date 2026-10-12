@@ -18,6 +18,9 @@ holds what isn't obvious from the code.
 - ST7789 on HSPI: SCLK 14, MOSI 13, MISO 12, CS 15, DC 2, backlight 27. `invert = false`, `rgb_order = false`.
 - Touch CST820 at I2C 0x15 (LovyanGFX `Touch_CST816S`): SDA 33, SCL 32, RST 25, INT 21. Rotation 1 = 320×240.
 - Serial is a CH340 at `/dev/cu.usbserial-*`. Uploads at 921600 baud fail; 460800 works.
+- RGB LED: GPIO 4/16/17 (R/G/B), active-low, LEDC channels 0-2 at 12 bits (the backlight owns channel 7). It is
+  extremely bright at low duty, so `LED_GAIN` in `main.cpp` is tiny and was tuned by eye for `#D97757`; blue gain is
+  0, since any blue turns it pink. Re-tune with a temporary slider sketch that prints duty over serial.
 - The panel can't be read back (`readRect` returns black), so screenshots stream each card's sprite instead.
   Gaps between cards and the waiting animation are drawn straight to the panel and aren't captured.
 - The ESP32 has no PSRAM: draw one card at a time into a 16-bit sprite; a full-screen sprite won't fit.

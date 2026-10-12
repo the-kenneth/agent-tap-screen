@@ -248,6 +248,10 @@ static void scene(Provider p, int h) {
   canvas.fillRect(6, h - 10, W - 12, 6, rgb(sky[5]));
 }
 
+static uint32_t accentFor(int provider) {
+  return provider == CLAUDE ? 0xD97757 : provider == CODEX ? 0x3ee68b : 0xb388ff;
+}
+
 static void frame(uint32_t accent, int h) {
   canvas.drawRect(0, 0, W, h, rgb(INK));
   canvas.drawRect(1, 1, W - 2, h - 2, rgb(INK));
@@ -265,7 +269,7 @@ static void drawCard(const Account &acc, int top, int h) {
     canvas.setColorDepth(16);
     if (!canvas.createSprite(W, h)) return;
   }
-  uint32_t accent = acc.provider == CLAUDE ? 0xff9f43 : acc.provider == CODEX ? 0x3ee68b : 0xb388ff;
+  uint32_t accent = accentFor(acc.provider);
   bool stale = strcmp(acc.status, "ok") != 0 || acc.age > STALE_SECONDS;
 
   canvas.fillScreen(rgb(BACKGROUND));
@@ -354,7 +358,7 @@ static void drawWaiting(const char *message) {
     canvas.createSprite(W, 60);
   }
   canvas.fillScreen(rgb(BACKGROUND));
-  frame(0xff9f43, 60);
+  frame(0xD97757, 60);
   pixelText(W / 2 + textWidth("USAGE SCREEN", 2) / 2, 14, "USAGE SCREEN", 2, CREAM, 1, true);
   pixelText(W / 2 + textWidth(message, 1) / 2, 36, message, 1, SOFT, 0, true);
   canvas.pushSprite(0, H / 2 - 30);
@@ -384,6 +388,45 @@ static void render() {
   drawBackground(top, H);
 }
 
+// ---------- status LED ----------
+
+// Active-low RGB LED on LEDC channels 0-2 (the backlight owns channel 7).
+static const int LED_PINS[3] = {4, 16, 17};
+
+// The LED is far brighter than its duty suggests, so output is scaled down hard, per channel (tuned by eye
+// for #D97757). 12-bit PWM keeps the breathing smooth at these tiny duties.
+static const float LED_GAIN[3] = {0.4355f, 0.656f, 0.0f};
+
+static void ledSet(uint8_t r, uint8_t g, uint8_t b) {
+  const uint8_t v[3] = {r, g, b};
+  for (int c = 0; c < 3; c++) ledcWrite(c, 4095 - (int)(v[c] * LED_GAIN[c] * 16));
+}
+
+static void ledInit() {
+  for (int c = 0; c < 3; c++) {  // active-low: hold off before PWM takes over
+    pinMode(LED_PINS[c], OUTPUT);
+    digitalWrite(LED_PINS[c], HIGH);
+  }
+  for (int c = 0; c < 3; c++) {
+    ledcSetup(c, 5000, 12);
+    ledcAttachPin(LED_PINS[c], c);
+  }
+  ledSet(0, 0, 0);
+}
+
+// Breathes in the accent colour of a waiting account (alternating if several), at the calibrated brightness.
+static void ledUpdate() {
+  int waiting[MAX_ACCOUNTS], n = 0;
+  for (int i = 0; i < accountCount; i++)
+    if (accounts[i].waiting > 0) waiting[n++] = i;
+  if (n == 0) { ledSet(0, 0, 0); return; }
+  uint32_t cycle = millis() / 2000;
+  uint32_t accent = accentFor(accounts[waiting[cycle % n]].provider);
+  float t = (millis() % 2000) / 2000.0f;
+  float level = 0.5f * (0.6f - 0.4f * cosf(t * 2 * PI));  // 20-100% of the calibrated peak
+  ledSet((accent >> 16 & 0xFF) * level, (accent >> 8 & 0xFF) * level, (accent & 0xFF) * level);
+}
+
 // ---------- waiting animation ----------
 
 // A point `d` pixels clockwise along the card's inner accent ring (2px wide, inset 2px).
@@ -410,7 +453,7 @@ static void animateWaiting() {
       lastHead[i] = -1;
       continue;
     }
-    uint32_t accent = acc.provider == CLAUDE ? 0xff9f43 : acc.provider == CODEX ? 0x3ee68b : 0xb388ff;
+    uint32_t accent = accentFor(acc.provider);
     const int perimeter = 2 * (W - 6 + acc.height - 6);
     int head = (int)((millis() % 4000) * perimeter / 4000);
     int x, y;
@@ -451,6 +494,7 @@ static void screenshot() {
 }
 
 void setup() {
+  ledInit();
   Serial.begin(115200);
   Serial.setRxBufferSize(2048);
   tft.init();
@@ -487,5 +531,6 @@ void loop() {
     render();
   }
   animateWaiting();
+  ledUpdate();
   delay(10);
 }

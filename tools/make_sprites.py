@@ -10,6 +10,7 @@ from PIL import Image, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY = 0xF81F  # transparent
+CLAUDE_ORANGE = (0xDE, 0x73, 0x56)
 CHATGPT_ICON = "/Applications/ChatGPT.app/Contents/Resources/icon-chatgpt.png"
 
 
@@ -29,8 +30,10 @@ def fit(image, size=32):
 
 
 def claude_sprite(path):
+    """Body pixels are flattened to the Claude brand colour; the dark eyes are kept."""
     image = fit(Image.open(path).convert("RGBA"))
-    return [KEY if a < 128 else rgb565(r, g, b) for r, g, b, a in image.getdata()]
+    return [KEY if a < 128 else rgb565(*CLAUDE_ORANGE) if max(r, g, b) > 100 else rgb565(r, g, b)
+            for r, g, b, a in image.getdata()]
 
 
 def chatgpt_sprite(path, ink=0xF79E):
