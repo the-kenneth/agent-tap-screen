@@ -23,7 +23,9 @@ holds what isn't obvious from the code.
   `#D97757` needs blue at 0, any blue turns it pink). Re-tune with a temporary slider sketch that prints duty over
   serial. With several accounts waiting the colour crossfades between them.
 - The panel can't be read back (`readRect` returns black), so screenshots stream each card's sprite instead.
-  Gaps between cards and the waiting animation are drawn straight to the panel and aren't captured.
+  Gaps between cards and the waiting animation are drawn straight to the panel and aren't captured. The scene
+  animation (twinkling stars, sun stripes, drifting clouds) is too, so a screenshot shows the scene as of its last
+  redraw.
 - The ESP32 has no PSRAM: draw one card at a time into a 16-bit sprite; a full-screen sprite won't fit.
 
 ## Serial protocol (115200, newline-terminated)

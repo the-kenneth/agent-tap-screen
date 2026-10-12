@@ -45,6 +45,8 @@ struct Account {
   int windowCount;
   int waiting;  // conversations waiting for the user
   int top, height;  // where the card was last drawn
+  int horizon;      // card row where the topmost panel starts; the scene's ground begins here
+  int textRight;    // right edge of the name and percentage labels
   Window windows[MAX_WINDOWS];
 };
 
@@ -60,6 +62,7 @@ static String line;
 // ---------- data ----------
 
 static uint32_t nowEpoch() { return hostEpoch + (millis() - receivedAtMs) / 1000; }
+static uint32_t shownEpoch = 0;  // the clock as of the last full redraw; partial redraws reuse it
 
 static void handleLine(const String &text) {
   JsonDocument doc;
@@ -104,7 +107,7 @@ static void timeLeft(const Window *w, char *out, size_t size) {
     strlcpy(out, "--", size);
     return;
   }
-  uint32_t now = nowEpoch();
+  uint32_t now = shownEpoch;
   uint32_t m = w->resets > now ? (w->resets - now + 59) / 60 : 0;
   if (m >= 1440) snprintf(out, size, "%luD %luH", (unsigned long)(m / 1440), (unsigned long)(m % 1440 / 60));
   else snprintf(out, size, "%luH %luM", (unsigned long)(m / 60), (unsigned long)(m % 60));
@@ -141,14 +144,17 @@ static void pixelText(int x, int y, const char *s, int scale, uint32_t color, in
   }
 }
 
-static uint16_t mix(uint32_t a, uint32_t b, float t) {
+static uint32_t blend(uint32_t a, uint32_t b, float t) {
   t = constrain(t, 0.0f, 1.0f);
-  auto ch = [&](int shift) {
+  uint32_t out = 0;
+  for (int shift = 0; shift <= 16; shift += 8) {
     int from = (a >> shift) & 0xFF, to = (b >> shift) & 0xFF;
-    return (int)(from + (to - from) * t);
-  };
-  return lgfx::color565(ch(16), ch(8), ch(0));
+    out |= (uint32_t)(from + (to - from) * t) << shift;
+  }
+  return out;
 }
+
+static uint16_t mix(uint32_t a, uint32_t b, float t) { return rgb(blend(a, b, t)); }
 
 static const uint32_t *band(float used) { return BANDS[used < 50 ? 0 : used < 80 ? 1 : used < 90 ? 2 : 3]; }
 
@@ -200,49 +206,219 @@ static void sprite(const uint16_t *pixels, int x, int y) {
 
 // ---------- scenes ----------
 
-static void px(int x, int y, uint32_t color, int w = 1, int h = 1) { canvas.fillRect(x * 2, y * 2, w * 2, h * 2, rgb(color)); }
+// Scenes draw into the card canvas, or straight to the panel or a small patch when only part of one animates.
+static lgfx::LovyanGFX *sceneTarget = &canvas;
+static int sceneX = 0, sceneY = 0;  // card position of the target's top-left corner
+static LGFX_Sprite patch(&tft);
 
-static void disc(int cx, int cy, int r, uint32_t color) {
-  for (int dy = -r; dy <= r; dy++) {
-    int w = (int)roundf(sqrtf(r * r - dy * dy));
-    px(cx - w, cy + dy, color, 2 * w + 1);
+static const uint32_t SKY[3][6] = {
+    {0x2a1330, 0x3a1834, 0x4d1f36, 0x652836, 0x7f3335, 0x9a4133},
+    {0x06171d, 0x082027, 0x0b2a2e, 0x0e3434, 0x113f39, 0x15493e},
+    {0x0d0a28, 0x120d33, 0x170f3e, 0x1c1349, 0x211654, 0x271a5f}};
+static const uint32_t GROUND[3] = {0x2c0f27, 0x04121a, 0x0a0820};
+
+// Scene positions and sizes are in 2px units, so everything sits on the same chunky grid.
+static const int SUN_X = 99, SUN_R = 7;
+static const int MOON_X = 100, MOON_Y = 15, MOON_R = 6;
+static const uint32_t STRIPE_MS = 5000;
+
+// Cirrus wisps as (dx, dy, length) streaks in scene units, at rest; the last two units at each end are fainter.
+struct Streak { int8_t dx, dy, len; };
+struct Cloud {
+  Streak streaks[3];
+  int width;        // widest extent at rest, for wrapping
+  float level;      // height in the sky, as a share from the top
+  uint32_t stepMs;  // time to drift one unit
+};
+static const Cloud CLOUDS[2] = {{{{9, 0, 12}, {0, 1, 30}, {17, 2, 11}}, 30, 0.3f, 1200},
+                                {{{5, 0, 15}, {0, 1, 9}, {12, 1, 8}}, 20, 0.62f, 1900}};
+static const int CLOUD_ROWS = 3;
+static const int CLOUD_SURGE = 8;  // furthest a streak's edge strays from its resting place
+static const uint32_t CLOUD_TINT[3] = {0xffb08c, 0xbfe8dc, 0xd8ccff};
+static const float CLOUD_ALPHA[3] = {0.35f, 0.25f, 0.25f};
+
+static void px(int x, int y, uint32_t color, int w = 1, int h = 1) {
+  sceneTarget->fillRect(x * 2 - sceneX, y * 2 - sceneY, w * 2, h * 2, rgb(color));
+}
+
+// Half-width of row dy of a pixel circle; the extra half unit stops one-pixel nubs at the top and bottom.
+static int span(int r, int dy) { return (int)sqrtf(max(0.0f, (r + 0.5f) * (r + 0.5f) - dy * dy)); }
+
+// Integer hash, so stars keep their places and rhythms across redraws.
+static uint32_t noise(uint32_t n) {
+  n ^= n >> 16;
+  n *= 0x7feb352d;
+  n ^= n >> 15;
+  n *= 0x846ca68b;
+  return n ^ (n >> 16);
+}
+
+// The six sky bands spread over what shows above the panels; below the horizon is ground.
+static uint32_t skyAt(const Account &acc, int y) {
+  int horizon = acc.horizon / 2;
+  if (y >= horizon) return GROUND[acc.provider];
+  return SKY[acc.provider][constrain((y - 2) * 6 / max(1, horizon - 2), 0, 5)];
+}
+
+static int sunY(const Account &acc) { return acc.horizon / 2 - 12; }
+
+static int cloudY(const Account &acc, int k) { return 2 + (int)(CLOUDS[k].level * (acc.horizon / 2 - 2)); }
+
+// Where an edge is relative to the cloud's steady drift. Two slow rhythms of its own make it surge and stall, but
+// together they never outpace the drift, so the edge only ever moves forward.
+static int surge(uint32_t seed, uint32_t t, uint32_t stepMs, float most) {
+  uint32_t n = noise(seed), m = noise(n);
+  uint32_t slow = 40000 + n % 40000, quick = 9000 + m % 9000;
+  float a = 0.6f * slow / (2 * PI * stepMs), b = 0.3f * quick / (2 * PI * stepMs);
+  float scale = min(1.0f, most / (a + b));
+  float f = a * sinf(2 * PI * ((t + (n >> 8)) % slow) / slow) + b * sinf(2 * PI * ((t + (m >> 8)) % quick) / quick);
+  return (int)floorf((float)(t % stepMs) / stepMs + scale * f);
+}
+
+// One cloud at one moment: each streak's row and [x0, x1) span.
+struct Wisp { int y[3], x0[3], x1[3]; };
+
+// The cloud drifts left to right and starts again from the left once it has fully left the card. Each streak's
+// front and back move on their own rhythms, so streaks stretch, shrink and slide past each other as it goes.
+static Wisp wispAt(const Account &acc, int k, uint32_t t) {
+  const Cloud &c = CLOUDS[k];
+  int track = W / 2 - 4 + c.width + 2 * CLOUD_SURGE;
+  int base = 2 - c.width - CLOUD_SURGE + (int)((t / c.stepMs + acc.provider * 57 + k * 83) % track);
+  Wisp w;
+  for (int j = 0; j < 3; j++) {
+    const Streak &s = c.streaks[j];
+    uint32_t seed = ((acc.provider * 2 + k) * 3 + j) * 2;
+    float most = min(CLOUD_SURGE - 1.0f, s.len / 4.0f);  // a streak keeps at least half its length
+    w.y[j] = cloudY(acc, k) + s.dy;
+    w.x0[j] = base + s.dx + surge(seed, t, c.stepMs, most);
+    w.x1[j] = base + s.dx + s.len + surge(seed + 1, t, c.stepMs, most);
+  }
+  return w;
+}
+
+static bool covered(const Wisp *wisps, int x, int y) {
+  for (int k = 0; k < 2; k++)
+    for (int j = 0; j < 3; j++)
+      if (y == wisps[k].y[j] && x >= wisps[k].x0[j] && x < wisps[k].x1[j]) return true;
+  return false;
+}
+
+// Whether a px rect is open sky: above the panels, clear of the header's boxes and labels, away from the sun or moon.
+static bool openSky(const Account &acc, int x, int y, int w, int h) {
+  if (x < 6 || x + w > W - 6 || y < 6 || y + h > acc.horizon - 4) return false;
+  if (y < 58 && (x < acc.textRight || x + w > 218)) return false;
+  if (acc.provider == OTHER) return true;
+  bool claude = acc.provider == CLAUDE;
+  int dx = (x + w / 2) / 2 - (claude ? SUN_X : MOON_X), dy = (y + h / 2) / 2 - (claude ? sunY(acc) : MOON_Y);
+  int clear = (claude ? SUN_R : MOON_R) + 4;
+  return dx * dx + dy * dy > clear * clear;
+}
+
+struct StarField {
+  int count;
+  uint32_t colors[2];
+  float dim, bright;  // twinkle range, as a blend from sky to star colour
+  float reach;        // share of the sky, from the top, the stars keep to
+};
+static const StarField STARS[3] = {{16, {0xffe2c4, 0xffc9a0}, 0.15f, 0.6f, 0.45f},
+                                   {28, {0x9bffd2, 0xe8fff4}, 0.3f, 1.0f, 1.0f},
+                                   {40, {0xefe6ff, 0xb9a6ff}, 0.3f, 1.0f, 1.0f}};
+
+// Each star slowly brightens and fades on its own rhythm; the first two are sparkles whose arms come and go.
+// A star behind a cloud is left out, so the live twinkle never paints over the cloud.
+static void stars(const Account &acc, uint32_t t, const Wisp *wisps) {
+  const StarField &f = STARS[acc.provider];
+  int rows = max(1, (int)(f.reach * (acc.horizon / 2 - 3)));
+  for (int i = 0; i < f.count; i++) {
+    uint32_t n = noise(acc.provider * 131 + i), m = noise(n);
+    int x = 3 + n % 154, y = 3 + (n >> 8) % rows, arm = i < 2;
+    if (!openSky(acc, (x - arm) * 2, (y - arm) * 2, (2 * arm + 1) * 2, (2 * arm + 1) * 2)) continue;
+    if (covered(wisps, x, y) || (arm && (covered(wisps, x - 1, y) || covered(wisps, x + 1, y) ||
+                                         covered(wisps, x, y - 1) || covered(wisps, x, y + 1))))
+      continue;
+    uint32_t period = 3000 + m % 4000;
+    float level = 0.5f - 0.5f * cosf(2 * PI * ((t % period + (m >> 12) % period) % period) / period);
+    uint32_t c = f.colors[(m >> 24) & 1];
+    if (arm) {
+      px(x, y, blend(skyAt(acc, y), c, f.bright));
+      for (int d : {-1, 1}) {
+        px(x + d, y, blend(skyAt(acc, y), c, 0.6f * f.bright * level));
+        px(x, y + d, blend(skyAt(acc, y + d), c, 0.6f * f.bright * level));
+      }
+    } else {
+      px(x, y, blend(skyAt(acc, y), c, f.dim + (f.bright - f.dim) * level));
+    }
   }
 }
 
-static void scene(Provider p, int h) {
-  static const uint32_t SKY[3][6] = {
-      {0x2a1330, 0x3a1834, 0x4d1f36, 0x652836, 0x7f3335, 0x9a4133},
-      {0x06171d, 0x082027, 0x0b2a2e, 0x0e3434, 0x113f39, 0x15493e},
-      {0x0d0a28, 0x120d33, 0x170f3e, 0x1c1349, 0x211654, 0x271a5f}};
-  const uint32_t *sky = SKY[p];
-  int bandH = (h - 8 + 5) / 6;
-  for (int i = 0; i < 6; i++) canvas.fillRect(6, 4 + i * bandH, W - 12, min(bandH, h - 8 - i * bandH), rgb(sky[i]));
-  int bottom = h / 2 - 3;  // scene ground line, in 2px units
-  randomSeed(p == CLAUDE ? 11 : p == CODEX ? 23 : 37);
-  if (p == CLAUDE) {
-    disc(100, 15, 5, 0xff9e4f);
-    disc(100, 15, 3, 0xffc067);
-    for (int yy : {17, 19}) px(94, yy, sky[2], 13);
-    for (int x = 4; x < 156; x++) {
-      int top = bottom - 8 + (int)roundf(5 * max(0.0f, sinf((x - 30) / 11.0f)) + 2 * sinf(x / 3.0f));
-      px(x, top, 0x5a2236, 1, bottom - top);
-    }
-  } else if (p == CODEX) {
-    for (int i = 0; i < 18; i++) px(random(30, 156), random(3, 14), 0x9bffd2);
-    disc(92, 9, 3, 0xd9ffe9);
-    disc(93, 8, 2, sky[0]);
-    for (int x = 50; x < 156;) {
-      int w = random(3, 6), bh = random(6, 13);
-      px(x, bottom - bh, 0x0b3530, w, bh);
-      for (int wy = bottom - bh + 1; wy < bottom - 1; wy += 2)
-        if (random(2)) px(x + 1, wy, 0x7dffb9);
-      x += w + 1;
-    }
-  } else {
-    for (int i = 0; i < 40; i++) px(random(3, 156), random(3, bottom), random(2) ? 0xefe6ff : 0xb9a6ff);
+// A banded sunset sun with a soft glow; its stripes drift slowly down.
+static void sun(const Account &acc, uint32_t t) {
+  const int cy = sunY(acc);
+  for (int dy = -SUN_R - 2; dy <= SUN_R + 2; dy++) {
+    int w = span(SUN_R + 2, dy);
+    px(SUN_X - w, cy + dy, blend(skyAt(acc, cy + dy), 0xff8a4f, 0.12f), 2 * w + 1);
   }
-  // Keep the strip under the gauge panel plain sky, so no scenery peeks out below it.
-  canvas.fillRect(6, h - 10, W - 12, 6, rgb(sky[5]));
+  int shift = t / STRIPE_MS % 3;
+  for (int dy = -SUN_R; dy <= SUN_R; dy++) {
+    if (dy > 0 && (dy + 3 - shift) % 3 == 0) continue;
+    int w = span(SUN_R, dy);
+    px(SUN_X - w, cy + dy, blend(0xffd36e, 0xff6f4a, (dy + SUN_R) / (2.0f * SUN_R)), 2 * w + 1);
+  }
+}
+
+// Two ridges of low hills on the horizon; the near one runs into the ground under the panels.
+static void hills(const Account &acc) {
+  int horizon = acc.horizon / 2;
+  for (int x = 2; x < W / 2 - 2; x++) {
+    int far = horizon - 5 + (int)roundf(1.6f * sinf(x / 9.0f + 1) + 0.9f * sinf(x / 4.7f + 2));
+    int near = horizon - 2 + (int)roundf(1.2f * sinf(x / 13.0f + 4));
+    px(x, far, 0x55203a, 1, horizon - far);
+    px(x, near, GROUND[CLAUDE], 1, horizon - near);
+  }
+}
+
+// A crescent with a faint glow; the shadowed side is just visible against the sky.
+static void moon(const Account &acc) {
+  const uint32_t LIT = 0xd9ffe9, SHADE = 0x9fdcc4;
+  for (int dy = -MOON_R - 2; dy <= MOON_R + 2; dy++) {
+    int w = span(MOON_R + 2, dy);
+    px(MOON_X - w, MOON_Y + dy, blend(skyAt(acc, MOON_Y + dy), LIT, 0.04f), 2 * w + 1);
+  }
+  for (int dy = -MOON_R; dy <= MOON_R; dy++) {
+    int w = span(MOON_R, dy);
+    for (int dx = -w; dx <= w; dx++) {
+      float bite = (dx - 4) * (dx - 4) + (dy + 2) * (dy + 2);
+      uint32_t shadow = blend(skyAt(acc, MOON_Y + dy), LIT, 0.08f);
+      px(MOON_X + dx, MOON_Y + dy, bite <= 5.5f * 5.5f ? shadow : bite <= 6.5f * 6.5f ? SHADE : LIT);
+    }
+  }
+}
+
+// Thin cirrus blended over whatever is already drawn, so it reads back the target (always a sprite here).
+static void clouds(const Account &acc, const Wisp *wisps) {
+  for (int k = 0; k < 2; k++)
+    for (int j = 0; j < 3; j++) {
+      const Wisp &w = wisps[k];
+      for (int x = max(2, w.x0[j]); x < min(W / 2 - 2, w.x1[j]); x++) {
+        auto under = sceneTarget->readPixelRGB(x * 2 - sceneX, w.y[j] * 2 - sceneY);
+        float alpha = CLOUD_ALPHA[acc.provider] * (x < w.x0[j] + 2 || x >= w.x1[j] - 2 ? 0.5f : 1.0f);
+        px(x, w.y[j], blend(under.r << 16 | under.g << 8 | under.b, CLOUD_TINT[acc.provider], alpha));
+      }
+    }
+}
+
+static void scene(const Account &acc, uint32_t t) {
+  const Wisp wisps[2] = {wispAt(acc, 0, t), wispAt(acc, 1, t)};
+  for (int y = 2; y < acc.height / 2 - 2; y++) px(2, y, skyAt(acc, y), W / 2 - 4);
+  stars(acc, t, wisps);
+  if (acc.provider == CLAUDE) {
+    sun(acc, t);
+    clouds(acc, wisps);
+    hills(acc);
+  } else {
+    if (acc.provider == CODEX) moon(acc);
+    clouds(acc, wisps);
+  }
 }
 
 static uint32_t accentFor(int provider) {
@@ -260,17 +436,48 @@ static void frame(uint32_t accent, int h) {
 
 // ---------- cards ----------
 
-static void drawCard(const Account &acc, int top, int h) {
-  if (canvas.width() != W || canvas.height() != h) {
-    canvas.deleteSprite();
-    canvas.setColorDepth(16);
-    if (!canvas.createSprite(W, h)) return;
-  }
+// One canvas serves every card and only grows, so cards of different heights don't churn the heap.
+static bool canvasFor(int h) {
+  if (canvas.width() == W && canvas.height() >= h) return true;
+  canvas.deleteSprite();
+  canvas.setColorDepth(16);
+  return canvas.createSprite(W, h);
+}
+
+static void pushCanvas(int x, int y, int w, int h, int top) {
+  tft.setClipRect(x, top + y, w, h);
+  canvas.pushSprite(0, top);
+  tft.clearClipRect();
+}
+
+// Rows y0..y1 given: only those rows inside the frame are drawn and sent, for a scene change behind the labels.
+static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y1 = 0) {
+  if (!canvasFor(h)) return;
+  if (y1 > y0) canvas.setClipRect(4, y0, W - 8, y1 - y0);
   uint32_t accent = accentFor(acc.provider);
   bool stale = strcmp(acc.status, "ok") != 0 || acc.age > STALE_SECONDS;
 
+  char name[16];
+  strlcpy(name, acc.name, sizeof(name));
+  // The weekly window is the headline; anything else (Claude's 5H) sits above its gauge.
+  const Window *main = findWindow(acc, "WEEK");
+  if (!main && acc.windowCount) main = &acc.windows[0];
+  const Window *session = findWindow(acc, "5H");
+  if (session == main) session = nullptr;
+  float left = remaining(main);
+  char number[8];
+  if (left < 0) strcpy(number, "--");
+  else snprintf(number, sizeof(number), "%d%%", (int)floorf(left));
+  int numberRight = 66 - leadingBlank(number) * 3 + textWidth(number, 3);
+
+  // The scene keeps its stars clear of the labels and sets its horizon where the panels begin.
+  acc.horizon = session ? h - 64 : h - 34;
+  acc.textRight = max(66 - leadingBlank(name) * 2 + textWidth(name, 2), numberRight + (stale ? 8 + textWidth("OLD", 2) : 0)) + 6;
+
   canvas.fillScreen(rgb(BACKGROUND));
-  scene(acc.provider, h);
+  sceneTarget = &canvas;
+  sceneX = sceneY = 0;
+  scene(acc, t);
   frame(accent, h);
 
   canvas.fillRect(12, 10, 44, 44, rgb(INK));
@@ -279,19 +486,9 @@ static void drawCard(const Account &acc, int top, int h) {
   if (acc.provider == CLAUDE) sprite(SPRITE_CLAUDE, 18, 16);
   else if (acc.provider == CODEX) sprite(SPRITE_CHATGPT, 18, 16);
 
-  char name[16];
-  strlcpy(name, acc.name, sizeof(name));
   pixelText(66, 10, name, 2, CREAM, 1);
-
-  // The weekly window is the headline; anything else (Claude's 5H) sits above its gauge.
-  const Window *main = findWindow(acc, "WEEK");
-  if (!main && acc.windowCount) main = &acc.windows[0];
-  float left = remaining(main);
-  char number[8];
-  if (left < 0) strcpy(number, "--");
-  else snprintf(number, sizeof(number), "%d%%", (int)floorf(left));
   pixelText(66, 31, number, 3, CREAM, 2);
-  if (stale) pixelText(66 + textWidth(number, 3) - leadingBlank(number) * 3 + 8, 38, "OLD", 2, OLD_INK, 1);
+  if (stale) pixelText(numberRight + 8, 38, "OLD", 2, OLD_INK, 1);
 
   canvas.fillRect(222, 10, 86, 42, rgb(INK));
   canvas.drawRect(222, 10, 86, 42, rgb(accent));
@@ -303,8 +500,7 @@ static void drawCard(const Account &acc, int top, int h) {
   pixelText(230, 31, when, 2, CREAM);
   if (left < 0 && strcmp(acc.status, "ok") != 0) pixelText(230, 31, "NO DATA", 2, OLD_INK);
 
-  const Window *session = findWindow(acc, "5H");
-  if (session && session != main) {
+  if (session) {
     canvas.fillRect(10, h - 64, W - 20, 26, rgb(INK));
     canvas.drawRect(12, h - 62, W - 24, 22, rgb(PANEL_RULE));
     pixelText(18, h - 58, "5H", 2, LABEL);
@@ -328,7 +524,12 @@ static void drawCard(const Account &acc, int top, int h) {
     canvas.fillCircle(54, 14, 7, rgb(0xff5a5f));
     pixelText(54 - textWidth(count, 1) / 2 + leadingBlank(count), 11, count, 1, CREAM);
   }
-  canvas.pushSprite(0, top);
+  if (y1 > y0) {
+    canvas.clearClipRect();
+    pushCanvas(4, y0, W - 8, y1 - y0, top);
+    return;
+  }
+  pushCanvas(0, 0, W, h, top);
   if (capturing) {
     Serial.printf("CARD %d %d\n", top, h);
     Serial.write((const uint8_t *)canvas.getBuffer(), W * h * 2);
@@ -349,16 +550,12 @@ static void drawBackground(int y0 = 0, int y1 = H) {
 
 static void drawWaiting(const char *message) {
   drawBackground();
-  if (canvas.width() != W || canvas.height() != 60) {
-    canvas.deleteSprite();
-    canvas.setColorDepth(16);
-    canvas.createSprite(W, 60);
-  }
+  if (!canvasFor(60)) return;
   canvas.fillScreen(rgb(BACKGROUND));
   frame(0xD97757, 60);
   pixelText(W / 2 + textWidth("USAGE SCREEN", 2) / 2, 14, "USAGE SCREEN", 2, CREAM, 1, true);
   pixelText(W / 2 + textWidth(message, 1) / 2, 36, message, 1, SOFT, 0, true);
-  canvas.pushSprite(0, H / 2 - 30);
+  pushCanvas(0, 0, W, 60, H / 2 - 30);
 }
 
 static void render() {
@@ -368,6 +565,7 @@ static void render() {
   }
   if (millis() - receivedAtMs > LINK_TIMEOUT_MS)
     for (int i = 0; i < accountCount; i++) accounts[i].age = STALE_SECONDS + 1;
+  shownEpoch = nowEpoch();
 
   // Claude carries the extra 5H row, so it gets the taller card.
   // The gaps are redrawn every time, so a card that changed size leaves nothing behind.
@@ -378,7 +576,7 @@ static void render() {
     int h = accountCount == 1 ? H - 8 : tall ? 136 : (accountCount == 2 && i == 1 ? H - 4 - top : 92);
     accounts[i].top = top;
     accounts[i].height = h;
-    drawCard(accounts[i], top, h);
+    drawCard(accounts[i], top, h, millis());
     top += h + 4;
     drawBackground(top - 4, min(top, H));
   }
@@ -471,6 +669,48 @@ static void animateWaiting() {
   }
 }
 
+// Stars are repainted in place and the sun's stripes via a small patch. Clouds pass behind the labels, so when a
+// cloud's edge moves, its card is redrawn clipped to the cloud's rows and just those rows are sent.
+static void animateScene() {
+  static uint32_t lastFrame = 0, lastStripe = 0;
+  static Wisp shown[MAX_ACCOUNTS][2];
+  if (millis() - lastFrame < 80) return;
+  uint32_t t = lastFrame = millis();
+  bool stripe = t / STRIPE_MS != lastStripe;
+  lastStripe = t / STRIPE_MS;
+  tft.startWrite();
+  for (int i = 0; i < accountCount; i++) {
+    Account &acc = accounts[i];
+    if (acc.height == 0) continue;
+    const Wisp wisps[2] = {wispAt(acc, 0, t), wispAt(acc, 1, t)};
+    for (int k = 0; k < 2; k++) {
+      if (!memcmp(&wisps[k], &shown[i][k], sizeof(Wisp))) continue;
+      shown[i][k] = wisps[k];
+      int y = cloudY(acc, k) * 2;
+      drawCard(acc, acc.top, acc.height, t, y, y + CLOUD_ROWS * 2);
+    }
+    sceneTarget = &tft;
+    sceneX = 0;
+    sceneY = -acc.top;
+    stars(acc, t, wisps);
+    if (acc.provider != CLAUDE || !stripe) continue;
+    const int x0 = (SUN_X - SUN_R - 2) * 2, y0 = (sunY(acc) - SUN_R - 2) * 2, w = (2 * SUN_R + 5) * 2;
+    if (patch.width() != w || patch.height() != acc.horizon - y0) {
+      patch.deleteSprite();
+      patch.setColorDepth(16);
+      if (!patch.createSprite(w, acc.horizon - y0)) continue;
+    }
+    sceneTarget = &patch;
+    sceneX = x0;
+    sceneY = y0;
+    scene(acc, t);
+    patch.pushSprite(x0, acc.top + y0);
+  }
+  tft.endWrite();
+  sceneTarget = &canvas;
+  sceneX = sceneY = 0;
+}
+
 static void handleTap(int32_t x, int32_t y) {
   Serial.printf("TOUCH %ld %ld\n", (long)x, (long)y);
   for (int i = 0; i < accountCount; i++) {
@@ -529,6 +769,7 @@ void loop() {
     render();
   }
   animateWaiting();
+  animateScene();
   ledUpdate();
   delay(10);
 }
