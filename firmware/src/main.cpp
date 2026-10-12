@@ -620,7 +620,7 @@ static void ledUpdate() {
   float mixT = (millis() % 4000) / 4000.0f;
   float w = n > 1 ? 0.5f - 0.5f * cosf(mixT * 2 * PI) : 0;  // 0 = first account, 1 = last
   float t = (millis() % 2000) / 2000.0f;
-  float level = 0.6f - 0.4f * cosf(t * 2 * PI);  // 20-100% of the peak
+  float level = 0.55f - 0.45f * cosf(t * 2 * PI);  // 10-100% of the peak
   ledSet((a[0] + (b[0] - a[0]) * w) * level, (a[1] + (b[1] - a[1]) * w) * level,
          (a[2] + (b[2] - a[2]) * w) * level);
 }
