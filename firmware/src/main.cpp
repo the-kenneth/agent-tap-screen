@@ -57,9 +57,6 @@ static bool dirty = true;
 static bool capturing = false;
 static String line;
 
-static const uint8_t BRIGHTNESS[] = {255, 70, 12};
-static int brightnessIndex = 0;
-
 // ---------- data ----------
 
 static uint32_t nowEpoch() { return hostEpoch + (millis() - receivedAtMs) / 1000; }
@@ -478,13 +475,11 @@ static void handleTap(int32_t x, int32_t y) {
   Serial.printf("TOUCH %ld %ld\n", (long)x, (long)y);
   for (int i = 0; i < accountCount; i++) {
     const Account &acc = accounts[i];
-    if (acc.waiting > 0 && y >= acc.top && y < acc.top + acc.height) {
+    if (y >= acc.top && y < acc.top + acc.height) {
       Serial.printf("OPEN %s\n", acc.name);
       return;
     }
   }
-  brightnessIndex = (brightnessIndex + 1) % sizeof(BRIGHTNESS);
-  tft.setBrightness(BRIGHTNESS[brightnessIndex]);
 }
 
 // The panel's read line isn't wired, so screenshots stream each card's sprite as it is redrawn.
@@ -502,7 +497,7 @@ void setup() {
   Serial.setRxBufferSize(2048);
   tft.init();
   tft.setRotation(1);
-  tft.setBrightness(BRIGHTNESS[brightnessIndex]);
+  tft.setBrightness(255);
   line.reserve(1024);
   render();
   Serial.println("{\"hello\":\"usage-screen\"}");

@@ -11,7 +11,7 @@ The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-
 - A reading older than 15 minutes is marked `OLD`; a missing one shows `--`, never 0%.
 - **Waiting conversations:** a light runs round the card's frame and a red badge shows `!` (or the count).
   Tap the card to open the longest-waiting one in the Claude desktop app or Codex.
-- Tapping anywhere else cycles brightness.
+- Tapping a card with nothing waiting brings that app (Claude or ChatGPT) to the front.
 
 ## How it works
 

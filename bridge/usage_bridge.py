@@ -309,6 +309,9 @@ def waiting():
     return result
 
 
+APP_NAMES = {"claude": "Claude", "codex": "ChatGPT"}
+
+
 def conversation_url(record):
     if record["provider"] == "codex":
         return "codex://threads/" + record["session"]
@@ -320,8 +323,13 @@ def handle_device_line(line, waits, verbose):
         print(line, file=sys.stderr)
     if not line.startswith("OPEN "):
         return
-    records = waits.get(line[5:].strip().lower())
+    provider = line[5:].strip().lower()
+    records = waits.get(provider)
     if not records:
+        # Nothing waiting: just bring the provider's app to the front.
+        app = APP_NAMES.get(provider)
+        if app:
+            subprocess.run(["open", "-a", app], timeout=10)
         return
     record = records[0]
     subprocess.run(["open", conversation_url(record)], timeout=10)
