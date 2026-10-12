@@ -249,7 +249,7 @@ static void scene(Provider p, int h) {
 }
 
 static uint32_t accentFor(int provider) {
-  return provider == CLAUDE ? 0xD97757 : provider == CODEX ? 0x3ee68b : 0xb388ff;
+  return provider == CLAUDE ? 0xD97757 : provider == CODEX ? 0x4049fe : 0xb388ff;
 }
 
 static void frame(uint32_t accent, int h) {
@@ -393,13 +393,13 @@ static void render() {
 // Active-low RGB LED on LEDC channels 0-2 (the backlight owns channel 7).
 static const int LED_PINS[3] = {4, 16, 17};
 
-// The LED is far brighter than its duty suggests, so output is scaled down hard, per channel (tuned by eye
-// for #D97757). 12-bit PWM keeps the breathing smooth at these tiny duties.
-static const float LED_GAIN[3] = {0.4355f, 0.656f, 0.0f};
+// The LED is far brighter than its duty suggests, so peak duties (12-bit, per provider) are tiny and tuned by
+// eye. Blue must stay 0 for Claude's orange, so colours are set directly rather than derived from the accent.
+static const int LED_PEAK[3][3] = {{756, 625, 0}, {0, 0, 150}, {300, 0, 100}};  // CLAUDE, CODEX, OTHER
 
-static void ledSet(uint8_t r, uint8_t g, uint8_t b) {
-  const uint8_t v[3] = {r, g, b};
-  for (int c = 0; c < 3; c++) ledcWrite(c, 4095 - (int)(v[c] * LED_GAIN[c] * 16));
+static void ledSet(int r, int g, int b) {
+  const int v[3] = {r, g, b};
+  for (int c = 0; c < 3; c++) ledcWrite(c, 4095 - v[c]);
 }
 
 static void ledInit() {
@@ -414,17 +414,17 @@ static void ledInit() {
   ledSet(0, 0, 0);
 }
 
-// Breathes in the accent colour of a waiting account (alternating if several), at the calibrated brightness.
+// Breathes in the colour of a waiting account (alternating if several).
 static void ledUpdate() {
   int waiting[MAX_ACCOUNTS], n = 0;
   for (int i = 0; i < accountCount; i++)
     if (accounts[i].waiting > 0) waiting[n++] = i;
   if (n == 0) { ledSet(0, 0, 0); return; }
   uint32_t cycle = millis() / 2000;
-  uint32_t accent = accentFor(accounts[waiting[cycle % n]].provider);
+  const int *peak = LED_PEAK[accounts[waiting[cycle % n]].provider];
   float t = (millis() % 2000) / 2000.0f;
-  float level = 0.5f * (0.6f - 0.4f * cosf(t * 2 * PI));  // 20-100% of the calibrated peak
-  ledSet((accent >> 16 & 0xFF) * level, (accent >> 8 & 0xFF) * level, (accent & 0xFF) * level);
+  float level = 0.6f - 0.4f * cosf(t * 2 * PI);  // 20-100% of the peak
+  ledSet(peak[0] * level, peak[1] * level, peak[2] * level);
 }
 
 // ---------- waiting animation ----------
