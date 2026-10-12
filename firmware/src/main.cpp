@@ -414,17 +414,20 @@ static void ledInit() {
   ledSet(0, 0, 0);
 }
 
-// Breathes in the colour of a waiting account (alternating if several).
+// Breathes in the colour of a waiting account; with several waiting, the colour crossfades between them.
 static void ledUpdate() {
   int waiting[MAX_ACCOUNTS], n = 0;
   for (int i = 0; i < accountCount; i++)
     if (accounts[i].waiting > 0) waiting[n++] = i;
   if (n == 0) { ledSet(0, 0, 0); return; }
-  uint32_t cycle = millis() / 2000;
-  const int *peak = LED_PEAK[accounts[waiting[cycle % n]].provider];
+  const int *a = LED_PEAK[accounts[waiting[0]].provider];
+  const int *b = LED_PEAK[accounts[waiting[n - 1]].provider];
+  float mixT = (millis() % 4000) / 4000.0f;
+  float w = n > 1 ? 0.5f - 0.5f * cosf(mixT * 2 * PI) : 0;  // 0 = first account, 1 = last
   float t = (millis() % 2000) / 2000.0f;
   float level = 0.6f - 0.4f * cosf(t * 2 * PI);  // 20-100% of the peak
-  ledSet(peak[0] * level, peak[1] * level, peak[2] * level);
+  ledSet((a[0] + (b[0] - a[0]) * w) * level, (a[1] + (b[1] - a[1]) * w) * level,
+         (a[2] + (b[2] - a[2]) * w) * level);
 }
 
 // ---------- waiting animation ----------
