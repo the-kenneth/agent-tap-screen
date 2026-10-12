@@ -53,6 +53,11 @@ def main():
             return
     else:
         session = str(data.get("session_id") or data.get("thread_id") or data.get("conversation_id") or "")
+        # The desktop app runs hidden ephemeral forks (e.g. next-message suggestions) that have no transcript
+        # and can't be opened.
+        transcript = data.get("transcript_path")
+        if action == "wait" and not (transcript and Path(transcript).is_file()):
+            return
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
         return
     path = WAITING_DIR / f"{provider}-{session}.json"
