@@ -46,8 +46,9 @@ def main():
     now = int(time.time())
     fd = bridge.open_serial(bridge.find_port())
     time.sleep(2.5)
-    waits = bridge.waiting()
-    rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), []))) for a in accounts]
+    waits, works = bridge.waiting(), bridge.conversations(bridge.WORKING_DIR, bridge.WORK_EXPIRY)
+    rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), [])), working=len(works.get(a.name.lower(), [])))
+            for a in accounts]
     os.write(fd, (json.dumps({"now": now, "accounts": rows}) + "\n").encode())
     time.sleep(2)
     termios_flush(fd)

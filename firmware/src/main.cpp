@@ -44,6 +44,7 @@ struct Account {
   Provider provider;
   int windowCount;
   int waiting;  // conversations waiting for the user
+  int working;  // conversations with a turn in progress
   int top, height;  // where the card was last drawn
   int horizon;      // card row where the topmost panel starts; the scene's ground begins here
   int textRight;    // right edge of the name and percentage labels
@@ -77,6 +78,7 @@ static void handleLine(const String &text) {
     strlcpy(acc.status, a["status"] | "error", sizeof(acc.status));
     acc.age = a["age"] | 0;
     acc.waiting = a["waiting"] | 0;
+    acc.working = a["working"] | 0;
     acc.provider = strcasecmp(acc.name, "claude") == 0 ? CLAUDE : strcasecmp(acc.name, "codex") == 0 ? CODEX : OTHER;
     acc.windowCount = 0;
     for (JsonObject w : a["windows"].as<JsonArray>()) {
@@ -434,6 +436,32 @@ static void frame(uint32_t accent, int h) {
     for (int cy : {0, h - 2}) canvas.fillRect(cx, cy, 2, 2, rgb(BACKGROUND));
 }
 
+// ---------- working spinner ----------
+
+// Beside the name, in the same place on every card; the sun and moon sit just to its right.
+static const int SPIN_X = 146, SPIN_Y = 8;
+static LGFX_Sprite spinPatch(&tft);
+
+// Claude cycles its asterisks out and back like Claude Code's spinner; Codex turns its knot.
+static const uint8_t *spinFrame(const Account &acc, uint32_t t) {
+  if (acc.provider == CODEX) return SPIN_CODEX[t / 100 % 12];
+  static const uint8_t ORDER[] = {0, 1, 2, 3, 4, 5, 4, 3, 2, 1};
+  return SPIN_CLAUDE[ORDER[t / 120 % sizeof(ORDER)]];
+}
+
+// Blends the frame over whatever the target already holds, so it reads back the target (always a sprite here).
+static void drawSpinner(lgfx::LovyanGFX *target, int x, int y, const Account &acc, uint32_t t) {
+  const uint8_t *alpha = spinFrame(acc, t);
+  uint32_t ink = acc.provider == CODEX ? CREAM : accentFor(acc.provider);
+  for (int yy = 0; yy < SPIN; yy++)
+    for (int xx = 0; xx < SPIN; xx++) {
+      uint8_t a = alpha[yy * SPIN + xx];
+      if (!a) continue;
+      auto under = target->readPixelRGB(x + xx, y + yy);
+      target->drawPixel(x + xx, y + yy, mix(under.r << 16 | under.g << 8 | under.b, ink, a / 255.0f));
+    }
+}
+
 // ---------- cards ----------
 
 // One canvas serves every card and only grows, so cards of different heights don't churn the heap.
@@ -473,6 +501,7 @@ static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y
   // The scene keeps its stars clear of the labels and sets its horizon where the panels begin.
   acc.horizon = session ? h - 64 : h - 34;
   acc.textRight = max(66 - leadingBlank(name) * 2 + textWidth(name, 2), numberRight + (stale ? 8 + textWidth("OLD", 2) : 0)) + 6;
+  if (acc.working > 0) acc.textRight = max(acc.textRight, SPIN_X + SPIN + 4);
 
   canvas.fillScreen(rgb(BACKGROUND));
   sceneTarget = &canvas;
@@ -489,6 +518,7 @@ static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y
   pixelText(66, 10, name, 2, CREAM, 1);
   pixelText(66, 31, number, 3, CREAM, 2);
   if (stale) pixelText(numberRight + 8, 38, "OLD", 2, OLD_INK, 1);
+  if (acc.working > 0) drawSpinner(&canvas, SPIN_X, SPIN_Y, acc, t);
 
   canvas.fillRect(222, 10, 86, 42, rgb(INK));
   canvas.drawRect(222, 10, 86, 42, rgb(accent));
@@ -669,6 +699,31 @@ static void animateWaiting() {
   }
 }
 
+// Only a frame change is drawn: the slot's scene is rebuilt in a small patch and the new frame blended over it.
+static void animateWorking() {
+  static const uint8_t *shown[MAX_ACCOUNTS];
+  uint32_t t = millis();
+  for (int i = 0; i < accountCount; i++) {
+    const Account &acc = accounts[i];
+    const uint8_t *frame = acc.working > 0 && acc.height ? spinFrame(acc, t) : nullptr;
+    if (frame == shown[i]) continue;
+    shown[i] = frame;
+    if (!frame) continue;  // the redraw that stopped it already cleared the slot
+    if (!spinPatch.width()) {
+      spinPatch.setColorDepth(16);
+      if (!spinPatch.createSprite(SPIN, SPIN)) return;
+    }
+    sceneTarget = &spinPatch;
+    sceneX = SPIN_X;
+    sceneY = SPIN_Y;
+    scene(acc, t);
+    drawSpinner(&spinPatch, 0, 0, acc, t);
+    spinPatch.pushSprite(SPIN_X, acc.top + SPIN_Y);
+  }
+  sceneTarget = &canvas;
+  sceneX = sceneY = 0;
+}
+
 // Stars are repainted in place and the sun's stripes via a small patch. Clouds pass behind the labels, so when a
 // cloud's edge moves, its card is redrawn clipped to the cloud's rows and just those rows are sent.
 static void animateScene() {
@@ -770,6 +825,7 @@ void loop() {
   }
   animateWaiting();
   animateScene();
+  animateWorking();
   ledUpdate();
   delay(10);
 }

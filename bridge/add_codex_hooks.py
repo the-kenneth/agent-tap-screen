@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the usage-screen waiting hooks to Codex's hooks.json, keeping every existing hook (backs it up first)."""
+"""Add the usage-screen working and waiting hooks to Codex's hooks.json, keeping every existing hook (backs it up first)."""
 import json
 import shutil
 import sys
@@ -15,9 +15,13 @@ def main():
         shutil.copy(path, str(path) + ".bak-usage-screen")
     data = json.loads(raw)
     hooks = data.setdefault("hooks", {})
-    for event, action in (("Stop", "wait"), ("UserPromptSubmit", "clear"), ("PostToolUse", "clear")):
+    for event, action in (("Stop", "wait"), ("UserPromptSubmit", "work"), ("PreToolUse", "work"), ("PostToolUse", "work")):
         command = HOOK + action
         entries = hooks.setdefault(event, [])
+        # Earlier versions installed `clear` where `work` now goes.
+        for e in entries:
+            e["hooks"] = [h for h in e.get("hooks", []) if h.get("command") != HOOK + "clear"]
+        entries[:] = [e for e in entries if e["hooks"]]
         if not any(h.get("command") == command for e in entries for h in e.get("hooks", [])):
             entries.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
     path.write_text(json.dumps(data, indent=2) + "\n")

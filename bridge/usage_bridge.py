@@ -17,10 +17,15 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from hook import APP_NAMES, claude_focused_session
+
 CODEX_BIN = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
 STATUSLINE_CACHE = Path("~/.cache/usage-screen/claude-statusline.json").expanduser()
 WAITING_DIR = Path("~/.cache/usage-screen/waiting").expanduser()
 WAIT_EXPIRY = 12 * 3600
+WORKING_DIR = Path("~/.cache/usage-screen/working").expanduser()
+# Every prompt and tool call refreshes an entry, so this only ends a turn whose agent died before its Stop hook.
+WORK_EXPIRY = 20 * 60
 CLAUDE_WINDOWS = (("five_hour", "5H"), ("seven_day", "WEEK"))
 
 
@@ -257,9 +262,10 @@ def main():
 
     fd, incoming, last_sent, last_payload = None, b"", 0.0, None
     while True:
-        waits = waiting()
+        waits, works = waiting(), conversations(WORKING_DIR, WORK_EXPIRY)
         now = int(time.time())
-        rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), []))) for a in accounts]
+        rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), [])), working=len(works.get(a.name.lower(), [])))
+                for a in accounts]
         payload = (json.dumps({"now": now, "accounts": rows}) + "\n").encode()
         # Ages tick every second, so compare without them to send only on real changes.
         changed = json.dumps([{k: v for k, v in r.items() if k != "age"} for r in rows]) != last_payload
@@ -280,7 +286,7 @@ def main():
             incoming += read_available(fd)
             while b"\n" in incoming:
                 line, incoming = incoming.split(b"\n", 1)
-                handle_device_line(line.decode(errors="replace").strip(), waits, args.verbose)
+                handle_device_line(line.decode(errors="replace").strip(), waits, works, args.verbose)
         except OSError as error:
             if args.verbose:
                 print(f"serial: {error}", file=sys.stderr)
@@ -292,12 +298,17 @@ def main():
 
 
 def waiting():
-    """Conversations waiting for the user, per provider, oldest first; entries past WAIT_EXPIRY are dropped."""
+    """Conversations waiting for the user, per provider, oldest first."""
+    return conversations(WAITING_DIR, WAIT_EXPIRY)
+
+
+def conversations(directory, expiry):
+    """Hook records in a folder, per provider, oldest first; entries older than `expiry` seconds are dropped."""
     result = {}
-    for path in WAITING_DIR.glob("*.json"):
+    for path in directory.glob("*.json"):
         try:
             record = json.loads(path.read_text())
-            if time.time() - record["since"] > WAIT_EXPIRY:
+            if time.time() - record["since"] > expiry:
                 path.unlink(missing_ok=True)
                 continue
             record["path"] = path
@@ -309,34 +320,62 @@ def waiting():
     return result
 
 
-APP_NAMES = {"claude": "Claude", "codex": "ChatGPT"}
-
-
 def conversation_url(record):
     if record["provider"] == "codex":
         return "codex://threads/" + record["session"]
     return "claude://code/continue?session=" + record["session"]
 
 
-def handle_device_line(line, waits, verbose):
+def front_app():
+    # lsappinfo needs no Automation permission, which the LaunchAgent doesn't have for System Events.
+    try:
+        asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True, timeout=2).stdout.strip()
+        info = subprocess.run(["lsappinfo", "info", "-only", "name", asn], capture_output=True, text=True, timeout=2)
+        return info.stdout.strip().rpartition("=")[2].strip('"')
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+last_opened = {}  # provider -> session; Codex doesn't say which thread is open, so taps remember it
+
+
+def next_working(provider, records):
+    """The working conversation a tap should show: the open one, or the next after it if its app is in front."""
+    ids = sorted(r["session"] for r in records)  # by id, as `since` changes on every tool call
+    current = claude_focused_session() if provider == "claude" else last_opened.get(provider)
+    if current not in ids:
+        return ids[0]
+    if front_app() == APP_NAMES[provider]:
+        return ids[(ids.index(current) + 1) % len(ids)]
+    return current
+
+
+def open_url(url, verbose):
+    subprocess.run(["open", url], timeout=10)
+    if verbose:
+        print(f"opened {url}", file=sys.stderr)
+
+
+def handle_device_line(line, waits, works, verbose):
     if verbose and line.startswith("TOUCH"):
         print(line, file=sys.stderr)
     if not line.startswith("OPEN "):
         return
     provider = line[5:].strip().lower()
-    records = waits.get(provider)
-    if not records:
-        # Nothing waiting: just bring the provider's app to the front.
-        app = APP_NAMES.get(provider)
-        if app:
-            subprocess.run(["open", "-a", app], timeout=10)
+    if provider not in APP_NAMES:
         return
-    record = records[0]
-    subprocess.run(["open", conversation_url(record)], timeout=10)
-    # Opened counts as seen, so the next tap moves on to the next waiting conversation.
-    record["path"].unlink(missing_ok=True)
-    if verbose:
-        print(f"opened {conversation_url(record)}", file=sys.stderr)
+    records = waits.get(provider)
+    if records:
+        record = records[0]
+        open_url(conversation_url(record), verbose)
+        # Opened counts as seen, so the next tap moves on to the next waiting conversation.
+        record["path"].unlink(missing_ok=True)
+        return
+    if works.get(provider):
+        session = last_opened[provider] = next_working(provider, works[provider])
+        open_url(conversation_url({"provider": provider, "session": session}), verbose)
+        return
+    subprocess.run(["open", "-a", APP_NAMES[provider]], timeout=10)
 
 
 def read_available(fd):

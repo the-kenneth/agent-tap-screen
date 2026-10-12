@@ -11,19 +11,23 @@ The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-
 - A reading older than 15 minutes is marked `OLD`; a missing one shows `--`, never 0%.
 - **Waiting conversations:** a light runs round the card's frame and a red badge shows `!` (or the count).
   Tap the card to open the longest-waiting one in the Claude desktop app or Codex.
-- Tapping a card with nothing waiting brings that app (Claude or ChatGPT) to the front.
+- **Working conversations:** a spinner beside the name while an agent is mid-turn — Claude's asterisks, Codex's
+  turning knot.
+- Tapping a card with nothing waiting opens a working conversation; tap again while that app is in front to
+  cycle through the others. With nothing working either, it brings the app (Claude or ChatGPT) to the front.
 
 ## How it works
 
 ```
-Claude Code / Codex hooks ──► ~/.cache/usage-screen/waiting/*.json ─┐
-Claude usage API, codex app-server ─────────────────────────────────┼─► bridge (LaunchAgent) ──USB serial──► ESP32
-                                         open claude:// / codex:// ◄┘◄── "OPEN <name>" on tap ◄──────────────┘
+Claude Code / Codex hooks ──► ~/.cache/usage-screen/{working,waiting}/*.json ─┐
+Claude usage API, codex app-server ──────────────────────────────────────────┼─► bridge (LaunchAgent) ──USB serial──► ESP32
+                                                  open claude:// / codex:// ◄┘◄── "OPEN <name>" on tap ◄──────────────┘
 ```
 
-- `bridge/usage_bridge.py` reads usage every 2 minutes, watches the waiting folder, sends one JSON line
+- `bridge/usage_bridge.py` reads usage every 2 minutes, watches the working and waiting folders, sends one JSON line
   to the screen on change (and every 30 s), and opens conversations when the screen asks.
-- `bridge/hook.py` is the hook both agents call: `wait` when a turn ends, `clear` when you reply.
+- `bridge/hook.py` is the hook both agents call: `work` on each prompt and tool call, `wait` when a turn
+  ends or needs permission, `clear` when the session ends.
 - `firmware/` draws everything; the Mac only sends numbers.
 
 ## Setup
@@ -43,10 +47,10 @@ Requirements: Python 3 (stdlib only), PlatformIO (`brew install platformio`), th
    launchctl kickstart gui/$(id -u)/local.usage-screen
    ```
    Log: `~/Library/Logs/usage-screen.log`.
-4. **Waiting hooks:**
+4. **Hooks:**
    - Claude: in `~/.claude/settings.json`, `Stop` and `Notification` run `hook.py claude wait`;
-     `UserPromptSubmit`, `PostToolUse` and `SessionEnd` run `hook.py claude clear`.
-   - Codex: `Stop` runs `hook.py codex wait`; `UserPromptSubmit` and `PostToolUse` run `hook.py codex clear`.
+     `UserPromptSubmit`, `PreToolUse` and `PostToolUse` run `hook.py claude work`; `SessionEnd` runs `hook.py claude clear`.
+   - Codex: `Stop` runs `hook.py codex wait`; `UserPromptSubmit`, `PreToolUse` and `PostToolUse` run `hook.py codex work`.
      Install with `python3 bridge/add_codex_hooks.py`, then approve the new hooks in Codex.
 
 ## Everyday commands
