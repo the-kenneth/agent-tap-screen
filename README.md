@@ -46,7 +46,8 @@ Requirements: Python 3 (stdlib only), PlatformIO (`brew install platformio`), th
 4. **Waiting hooks:**
    - Claude: in `~/.claude/settings.json`, `Stop` and `Notification` run `hook.py claude wait`;
      `UserPromptSubmit`, `PostToolUse` and `SessionEnd` run `hook.py claude clear`.
-   - Codex: `python3 bridge/add_codex_hooks.py`, then approve the new hooks in Codex.
+   - Codex: `Stop` runs `hook.py codex wait`; `UserPromptSubmit` and `PostToolUse` run `hook.py codex clear`.
+     Install with `python3 bridge/add_codex_hooks.py`, then approve the new hooks in Codex.
 
 ## Everyday commands
 

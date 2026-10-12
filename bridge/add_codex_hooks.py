@@ -15,7 +15,7 @@ def main():
         shutil.copy(path, str(path) + ".bak-usage-screen")
     data = json.loads(raw)
     hooks = data.setdefault("hooks", {})
-    for event, action in (("Stop", "wait"), ("UserPromptSubmit", "clear")):
+    for event, action in (("Stop", "wait"), ("UserPromptSubmit", "clear"), ("PostToolUse", "clear")):
         command = HOOK + action
         entries = hooks.setdefault(event, [])
         if not any(h.get("command") == command for e in entries for h in e.get("hooks", [])):
