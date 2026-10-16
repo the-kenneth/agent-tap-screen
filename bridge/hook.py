@@ -15,20 +15,36 @@ from pathlib import Path
 WAITING_DIR = Path("~/.cache/usage-screen/waiting").expanduser()
 WORKING_DIR = Path("~/.cache/usage-screen/working").expanduser()
 APP_NAMES = {"claude": "Claude", "codex": "ChatGPT"}
-CLAUDE_LOG = Path("~/Library/Logs/Claude/main.log").expanduser()
-FOCUS_RE = re.compile(r"setFocusedSession: sessionId=(\S+)")
+CLAUDE_LOGS = [Path(f"~/Library/Logs/Claude/{name}.log").expanduser() for name in ("main", "main1")]
+FOCUS_RE = re.compile(rb"setFocusedSession: sessionId=(\S+)")
+CHUNK = 262144
+
+
+def last_focus(path):
+    # Reads backwards in chunks, overlapping so a line split across chunks is still found.
+    with path.open("rb") as f:
+        end = f.seek(0, os.SEEK_END)
+        while end > 0:
+            start = max(0, end - CHUNK)
+            f.seek(start)
+            found = FOCUS_RE.findall(f.read(end - start + 200))
+            if found:
+                return found[-1].decode()
+            end = start
+    return ""
 
 
 def claude_focused_session():
-    # The desktop app logs every chat switch; the last entry is the open chat.
-    try:
-        with CLAUDE_LOG.open("rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - 262144))
-            found = FOCUS_RE.findall(f.read().decode("utf-8", "replace"))
-        return found[-1] if found else ""
-    except Exception:
-        return ""
+    # The desktop app logs every chat switch; the last entry is the open chat. A quiet chat can be open for hours
+    # and the log rotates, so the entry may be far back or in the previous file.
+    for path in CLAUDE_LOGS:
+        try:
+            session = last_focus(path)
+        except OSError:
+            continue
+        if session:
+            return session
+    return ""
 
 
 def frontmost_app():
@@ -57,6 +73,9 @@ def main():
         return
     provider, action = sys.argv[1], sys.argv[2]
     data = json.loads(sys.stdin.read() or "{}")
+    # The idle reminder fires a minute after Stop, which already decided; it would re-flag a chat you just read.
+    if data.get("notification_type") == "idle_prompt" or "waiting for your input" in str(data.get("message", "")):
+        return
     if provider == "claude":
         # Only Claude desktop sessions can be reopened, and its links take the desktop's own session id.
         session = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "")
