@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Send one live reading to the screen, then save what the panel shows as a PNG (stop the bridge first)."""
+import argparse
 import json
 import os
 import struct
-import sys
 import time
 import zlib
+from datetime import date
 
 import usage_bridge as bridge
 
@@ -38,7 +39,11 @@ def write_png(path, width, height, rgb565, swap):
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else "screen.png"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out", nargs="?", default="screen.png")
+    parser.add_argument("--scenes", help="scene numbers for the two cards, e.g. 2,3 (default: today's)")
+    args = parser.parse_args()
+    scenes = [int(s) for s in args.scenes.split(",")] if args.scenes else bridge.daily_scenes(date.today())
     accounts = [bridge.Account("Claude", "#D97757", bridge.fetch_claude(True)),
                 bridge.Account("Codex", "#10A37F", bridge.fetch_codex())]
     for account in accounts:
@@ -46,9 +51,7 @@ def main():
     now = int(time.time())
     fd = bridge.open_serial(bridge.find_port())
     time.sleep(2.5)
-    waits, works = bridge.waiting(), bridge.conversations(bridge.WORKING_DIR, bridge.WORK_EXPIRY)
-    rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), [])), working=len(works.get(a.name.lower(), [])))
-            for a in accounts]
+    rows = bridge.screen_rows(accounts, now, scenes)[0]
     os.write(fd, (json.dumps({"now": now, "accounts": rows}) + "\n").encode())
     time.sleep(2)
     termios_flush(fd)
@@ -73,8 +76,8 @@ def main():
             continue
         top, rows = map(int, tag.split()[1:3])
         pixels[top * width * 2:(top + rows) * width * 2] = read_exact(fd, width * rows * 2, deadline)
-    write_png(out, width, height, pixels, swap=True)
-    print(f"saved {out}")
+    write_png(args.out, width, height, pixels, swap=True)
+    print(f"saved {args.out}")
 
 
 def termios_flush(fd):

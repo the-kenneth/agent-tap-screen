@@ -8,6 +8,8 @@ The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-
 - **Claude card:** weekly limit left as the headline, the 5-hour limit in a thinner bar above it.
 - **Codex card:** weekly limit left.
 - Bars are full at 100% left and empty as you use them; colour moves green → lime → orange → red.
+- Each card sits on a small animated pixel scene: sunset, moonlit night, aurora, snowfall, moonlit sea, misty dawn,
+  Mount Fuji, Milky Way, fireflies or cherry blossom. They change daily at random, never repeating the day before.
 - A reading older than 15 minutes is marked `OLD`; a missing one shows `--`, never 0%.
 - **Waiting conversations:** a light runs round the card's frame and a red badge shows `!` (or the count).
   Tap the card to open the longest-waiting one in the Claude desktop app or Codex.

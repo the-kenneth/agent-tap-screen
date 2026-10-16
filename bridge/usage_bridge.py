@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read Claude and Codex usage on the Mac and stream it to the screen over USB serial."""
 import argparse
+import functools
 import glob
 import hashlib
 import json
@@ -14,7 +15,7 @@ import time
 import unicodedata
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from hook import APP_NAMES, claude_focused_session
@@ -27,6 +28,8 @@ WORKING_DIR = Path("~/.cache/usage-screen/working").expanduser()
 # Every prompt and tool call refreshes an entry, so this only ends a turn whose agent died before its Stop hook.
 WORK_EXPIRY = 20 * 60
 CLAUDE_WINDOWS = (("five_hour", "5H"), ("seven_day", "WEEK"))
+SCENE_COUNT = 10  # SceneId in firmware/src/main.cpp
+SCENE_START = date(2026, 1, 1)
 
 
 def epoch(value):
@@ -161,6 +164,30 @@ def codex_usage():
     return windows
 
 
+@functools.lru_cache(maxsize=1)
+def daily_scenes(day):
+    """Each card's scene for a day: random, but never one either card showed the day before, and never both the same.
+
+    Each day's pick is seeded by its date and follows from the day before, so the sequence needs no saved state."""
+    shown = (0, 1)
+    for n in range((day - SCENE_START).days + 1):
+        free = [s for s in range(SCENE_COUNT) if s not in shown]
+        first = free.pop(seeded(n, 0) % len(free))
+        shown = (first, free[seeded(n, 1) % len(free)])
+    return shown
+
+
+def seeded(*parts):
+    return int.from_bytes(hashlib.sha256(repr(parts).encode()).digest()[:4], "big")
+
+
+def screen_rows(accounts, now, scenes):
+    waits, works = waiting(), conversations(WORKING_DIR, WORK_EXPIRY)
+    rows = [dict(a.row(now), scene=scene, waiting=len(waits.get(a.name.lower(), [])),
+                 working=len(works.get(a.name.lower(), []))) for a, scene in zip(accounts, scenes)]
+    return rows, waits, works
+
+
 class Account:
     def __init__(self, name, color, fetch):
         self.name, self.color, self.fetch = name, color, fetch
@@ -262,10 +289,8 @@ def main():
 
     fd, incoming, last_sent, last_payload = None, b"", 0.0, None
     while True:
-        waits, works = waiting(), conversations(WORKING_DIR, WORK_EXPIRY)
         now = int(time.time())
-        rows = [dict(a.row(now), waiting=len(waits.get(a.name.lower(), [])), working=len(works.get(a.name.lower(), [])))
-                for a in accounts]
+        rows, waits, works = screen_rows(accounts, now, daily_scenes(date.today()))
         payload = (json.dumps({"now": now, "accounts": rows}) + "\n").encode()
         # Ages tick every second, so compare without them to send only on real changes.
         changed = json.dumps([{k: v for k, v in r.items() if k != "age"} for r in rows]) != last_payload
