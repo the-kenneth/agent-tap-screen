@@ -132,7 +132,8 @@ static int leadingBlank(const char *s) {
   return blank;
 }
 
-static void pixelText(int x, int y, const char *s, int scale, uint32_t color, int stroke = 0, bool right = false) {
+static void pixelText(int x, int y, const char *s, int scale, uint32_t color, int stroke = 0, bool right = false,
+                      lgfx::LovyanGFX *target = &canvas) {
   if (right) x -= textWidth(s, scale);
   else x -= leadingBlank(s) * scale;
   for (int pass = stroke ? 0 : 1; pass < 2; pass++) {
@@ -143,7 +144,7 @@ static void pixelText(int x, int y, const char *s, int scale, uint32_t color, in
       for (int yy = 0; yy < 7; yy++)
         for (int xx = 0; xx < 5; xx++)
           if (rows[yy] & (16 >> xx))
-            canvas.fillRect(x + (i * 6 + xx) * scale - grow, y + yy * scale - grow, scale + 2 * grow, scale + 2 * grow, c);
+            target->fillRect(x + (i * 6 + xx) * scale - grow, y + yy * scale - grow, scale + 2 * grow, scale + 2 * grow, c);
     }
   }
 }
@@ -198,14 +199,6 @@ static void gaugePanel(int x0, int y0, int x1, int y1, float left, bool stale) {
   canvas.fillRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, rgb(INK));
   canvas.drawRect(x0 + 2, y0 + 2, x1 - x0 - 3, y1 - y0 - 3, rgb(PANEL_RULE));
   gauge(x0 + 4, y0 + 4, x1 - 4, y1 - 4, left, stale);
-}
-
-static void sprite(const uint16_t *pixels, int x, int y) {
-  for (int yy = 0; yy < 32; yy++)
-    for (int xx = 0; xx < 32; xx++) {
-      uint16_t p = pixels[yy * 32 + xx];
-      if (p != SPRITE_KEY) canvas.drawPixel(x + xx, y + yy, p);
-    }
 }
 
 // ---------- scenes ----------
@@ -438,30 +431,53 @@ static void frame(uint32_t accent, int h) {
     for (int cy : {0, h - 2}) canvas.fillRect(cx, cy, 2, 2, rgb(BACKGROUND));
 }
 
-// ---------- working spinner ----------
+// ---------- logo ----------
 
-// Beside the name, in the same place on every card; the sun and moon sit just to its right.
-static const int SPIN_X = 146, SPIN_Y = 8;
-static LGFX_Sprite spinPatch(&tft);
+// Inside of the logo box. While a turn is in progress the logo animates: Clawd types on his laptop as he does in
+// the Claude desktop app, and the ChatGPT knot turns.
+static const int LOGO_X = 14, LOGO_Y = 12, LOGO_SIZE = 40;
+static const uint32_t KNOT_STEP_MS = 83;
+static LGFX_Sprite logoPatch(&tft);
 
-// Claude cycles its asterisks out and back like Claude Code's spinner; Codex turns its knot.
-static const uint8_t *spinFrame(const Account &acc, uint32_t t) {
-  if (acc.provider == CODEX) return SPIN_CODEX[t / 100 % 12];
-  static const uint8_t ORDER[] = {0, 1, 2, 3, 4, 5, 4, 3, 2, 1};
-  return SPIN_CLAUDE[ORDER[t / 120 % sizeof(ORDER)]];
+// -1 is the resting logo.
+static int logoFrame(const Account &acc, uint32_t t) {
+  if (acc.working <= 0) return -1;
+  if (acc.provider == CLAUDE) return t / (1000 / CLAWD_FPS) % CLAWD_FRAMES;
+  if (acc.provider == CODEX) return t / KNOT_STEP_MS % KNOT_FRAMES;
+  return -1;
 }
 
-// Blends the frame over whatever the target already holds, so it reads back the target (always a sprite here).
-static void drawSpinner(lgfx::LovyanGFX *target, int x, int y, const Account &acc, uint32_t t) {
-  const uint8_t *alpha = spinFrame(acc, t);
-  uint32_t ink = acc.provider == CODEX ? CREAM : accentFor(acc.provider);
-  for (int yy = 0; yy < SPIN; yy++)
-    for (int xx = 0; xx < SPIN; xx++) {
-      uint8_t a = alpha[yy * SPIN + xx];
-      if (!a) continue;
-      auto under = target->readPixelRGB(x + xx, y + yy);
-      target->drawPixel(x + xx, y + yy, mix(under.r << 16 | under.g << 8 | under.b, ink, a / 255.0f));
+static void drawLogo(lgfx::LovyanGFX *target, int x, int y, const Account &acc, int frame) {
+  target->fillRect(x, y, LOGO_SIZE, LOGO_SIZE, rgb(INK));
+  if (acc.provider == CLAUDE) {
+    const char *pixels = frame < 0 ? CLAWD_REST : CLAWD_TYPING[frame];
+    x += (LOGO_SIZE - CLAWD_W) / 2;
+    y += (LOGO_SIZE - CLAWD_H) / 2;
+    for (int i = 0; i < CLAWD_W * CLAWD_H; i++)
+      if (pixels[i] != '.') target->drawPixel(x + i % CLAWD_W, y + i / CLAWD_W, rgb(CLAWD_PALETTE[pixels[i] - '0']));
+  } else if (acc.provider == CODEX) {
+    x += (LOGO_SIZE - KNOT) / 2;
+    y += (LOGO_SIZE - KNOT) / 2;
+    for (int i = 0; i < KNOT * KNOT; i++) {
+      int xx = x + i % KNOT, yy = y + i / KNOT;
+      if (frame < 0) {
+        if (SPRITE_CHATGPT[i] != SPRITE_KEY) target->drawPixel(xx, yy, SPRITE_CHATGPT[i]);
+        continue;
+      }
+      char c = KNOT_TURN[frame][i];
+      if (c != '.') target->drawPixel(xx, yy, mix(INK, CHATGPT_INK, (c <= '9' ? c - '0' : c - 'A' + 10) / 15.0f));
     }
+  }
+}
+
+// Red badge on the logo box's corner counting waiting conversations; (x, y) is the target's place in the card.
+static void badge(lgfx::LovyanGFX *target, int x, int y, int waiting) {
+  char count[4];
+  if (waiting == 1) strcpy(count, "!");
+  else snprintf(count, sizeof(count), "%d", min(waiting, 9));
+  target->fillCircle(54 - x, 14 - y, 9, rgb(INK));
+  target->fillCircle(54 - x, 14 - y, 7, rgb(0xff5a5f));
+  pixelText(54 - x - textWidth(count, 1) / 2 + leadingBlank(count), 11 - y, count, 1, CREAM, 0, false, target);
 }
 
 // ---------- cards ----------
@@ -503,7 +519,6 @@ static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y
   // The scene keeps its stars clear of the labels and sets its horizon where the panels begin.
   acc.horizon = session ? h - 64 : h - 34;
   acc.textRight = max(66 - leadingBlank(name) * 2 + textWidth(name, 2), numberRight + (stale ? 8 + textWidth("OLD", 2) : 0)) + 6;
-  if (acc.working > 0) acc.textRight = max(acc.textRight, SPIN_X + SPIN + 4);
 
   canvas.fillScreen(rgb(BACKGROUND));
   sceneTarget = &canvas;
@@ -511,16 +526,13 @@ static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y
   scene(acc, t);
   frame(accent, h);
 
-  canvas.fillRect(12, 10, 44, 44, rgb(INK));
   canvas.drawRect(12, 10, 44, 44, rgb(accent));
   canvas.drawRect(13, 11, 42, 42, rgb(accent));
-  if (acc.provider == CLAUDE) sprite(SPRITE_CLAUDE, 18, 16);
-  else if (acc.provider == CODEX) sprite(SPRITE_CHATGPT, 18, 16);
+  drawLogo(&canvas, LOGO_X, LOGO_Y, acc, logoFrame(acc, t));
 
   pixelText(66, 10, name, 2, CREAM, 1);
   pixelText(66, 31, number, 3, CREAM, 2);
   if (stale) pixelText(numberRight + 8, 38, "OLD", 2, OLD_INK, 1);
-  if (acc.working > 0) drawSpinner(&canvas, SPIN_X, SPIN_Y, acc, t);
 
   canvas.fillRect(222, 10, 86, 42, rgb(INK));
   canvas.drawRect(222, 10, 86, 42, rgb(accent));
@@ -548,14 +560,7 @@ static void drawCard(Account &acc, int top, int h, uint32_t t, int y0 = 0, int y
 
   gaugePanel(10, h - 34, W - 11, h - 10, left, stale);
 
-  if (acc.waiting > 0) {
-    char count[4];
-    if (acc.waiting == 1) strcpy(count, "!");
-    else snprintf(count, sizeof(count), "%d", min(acc.waiting, 9));
-    canvas.fillCircle(54, 14, 9, rgb(INK));
-    canvas.fillCircle(54, 14, 7, rgb(0xff5a5f));
-    pixelText(54 - textWidth(count, 1) / 2 + leadingBlank(count), 11, count, 1, CREAM);
-  }
+  if (acc.waiting > 0) badge(&canvas, 0, 0, acc.waiting);
   if (y1 > y0) {
     canvas.clearClipRect();
     pushCanvas(4, y0, W - 8, y1 - y0, top);
@@ -701,29 +706,24 @@ static void animateWaiting() {
   }
 }
 
-// Only a frame change is drawn: the slot's scene is rebuilt in a small patch and the new frame blended over it.
-static void animateWorking() {
-  static const uint8_t *shown[MAX_ACCOUNTS];
+// Only a frame change is drawn, into a patch over the inside of the logo box.
+static void animateLogos() {
+  static int shown[MAX_ACCOUNTS];
   uint32_t t = millis();
   for (int i = 0; i < accountCount; i++) {
     const Account &acc = accounts[i];
-    const uint8_t *frame = acc.working > 0 && acc.height ? spinFrame(acc, t) : nullptr;
+    int frame = acc.height ? logoFrame(acc, t) : -1;
     if (frame == shown[i]) continue;
     shown[i] = frame;
-    if (!frame) continue;  // the redraw that stopped it already cleared the slot
-    if (!spinPatch.width()) {
-      spinPatch.setColorDepth(16);
-      if (!spinPatch.createSprite(SPIN, SPIN)) return;
+    if (frame < 0) continue;  // the redraw that stopped it drew the resting logo
+    if (!logoPatch.width()) {
+      logoPatch.setColorDepth(16);
+      if (!logoPatch.createSprite(LOGO_SIZE, LOGO_SIZE)) return;
     }
-    sceneTarget = &spinPatch;
-    sceneX = SPIN_X;
-    sceneY = SPIN_Y;
-    scene(acc, t);
-    drawSpinner(&spinPatch, 0, 0, acc, t);
-    spinPatch.pushSprite(SPIN_X, acc.top + SPIN_Y);
+    drawLogo(&logoPatch, 0, 0, acc, frame);
+    if (acc.waiting > 0) badge(&logoPatch, LOGO_X, LOGO_Y, acc.waiting);
+    logoPatch.pushSprite(LOGO_X, acc.top + LOGO_Y);
   }
-  sceneTarget = &canvas;
-  sceneX = sceneY = 0;
 }
 
 // Stars are repainted in place and the sun's stripes via a small patch. Clouds pass behind the labels, so when a
@@ -827,7 +827,7 @@ void loop() {
   }
   animateWaiting();
   animateScene();
-  animateWorking();
+  animateLogos();
   ledUpdate();
   delay(10);
 }

@@ -11,8 +11,8 @@ The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-
 - A reading older than 15 minutes is marked `OLD`; a missing one shows `--`, never 0%.
 - **Waiting conversations:** a light runs round the card's frame and a red badge shows `!` (or the count).
   Tap the card to open the longest-waiting one in the Claude desktop app or Codex.
-- **Working conversations:** a spinner beside the name while an agent is mid-turn — Claude's asterisks, Codex's
-  turning knot.
+- **Working conversations:** the card's logo animates while an agent is mid-turn — Clawd types on his laptop as
+  he does in the Claude desktop app, and the ChatGPT knot slowly turns.
 - Tapping a card with nothing waiting opens a working conversation; tap again while that app is in front to
   cycle through the others. With nothing working either, it brings the app (Claude or ChatGPT) to the front.
 
@@ -67,5 +67,5 @@ python3 bridge/usage_bridge.py --debug-claude                                   
 
 ## Credits
 
-Pixel Retro layout, 5×7 font and the Claude mascot come from token-tv (MIT). The ChatGPT knot is
-thresholded from the ChatGPT app's own icon.
+Pixel Retro layout and 5×7 font come from token-tv (MIT). Clawd and his laptop animation are read from the
+Claude desktop app; the ChatGPT knot is thresholded from the ChatGPT app's own icon.
