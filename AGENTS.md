@@ -28,6 +28,8 @@ holds what isn't obvious from the code.
   Gaps between cards and the waiting animation are drawn straight to the panel and aren't captured. The scene
   animation (twinkling stars, sun stripes, drifting clouds) is too, so a screenshot shows the scene as of its last
   redraw.
+- Sprite pushes go by DMA. Inside a `startWrite` block `pushSprite` returns before the transfer ends, so
+  `pushCanvas` waits for it; without that the next card's drawing corrupts the rows still being sent.
 - The ESP32 has no PSRAM: draw one card at a time into a 16-bit sprite; a full-screen sprite won't fit.
 
 ## Serial protocol (115200, newline-terminated)

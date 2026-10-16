@@ -493,6 +493,8 @@ static bool canvasFor(int h) {
 static void pushCanvas(int x, int y, int w, int h, int top) {
   tft.setClipRect(x, top + y, w, h);
   canvas.pushSprite(0, top);
+  // Inside a write block the push returns while DMA is still reading the canvas, and the next card draws into it.
+  tft.waitDMA();
   tft.clearClipRect();
 }
 
