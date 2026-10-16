@@ -59,8 +59,10 @@ The bridge holds the serial port, so stop it before flashing or taking a screens
 
 ```bash
 launchctl bootout gui/$(id -u)/local.usage-screen                                   # stop
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.usage-screen.plist    # start
-launchctl kickstart -k gui/$(id -u)/local.usage-screen                              # restart after bridge edits
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.usage-screen.plist    # load
+launchctl kickstart -k gui/$(id -u)/local.usage-screen                              # start (launchd can leave a
+                                                                                          # fresh load unstarted), or
+                                                                                          # restart after bridge edits
 python3 bridge/screenshot.py screen.png                                                   # capture the cards as a PNG
 python3 bridge/usage_bridge.py --debug-claude                                             # raw Claude usage JSON
 ```
