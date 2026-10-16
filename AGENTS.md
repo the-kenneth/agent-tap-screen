@@ -46,7 +46,10 @@ Mac → screen:
     and neither shows a scene either card had the day before.
 - `SHOT` → screen replies `SHOT w h`, then `CARD top h` plus raw big-endian RGB565 rows per card, then `END`.
 
-Screen → Mac: `OPEN <name>` (any tap on a card; the bridge picks waiting, then working, then just the app), `TOUCH x y` (every tap; logged with `-v`).
+Screen → Mac: `OPEN <name>` (a single tap on a card, sent 300 ms after touch-down so a second tap can turn it into a
+scene change instead; the bridge picks waiting, then working, then just the app), `TOUCH x y` (every tap; logged
+with `-v`). A double-tap's scene override lives only in firmware RAM (`pickedScene`) and drops when the bridge's
+`scene` for that card changes.
 
 ## Data sources
 

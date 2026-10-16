@@ -17,6 +17,8 @@ The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-
   he does in the Claude desktop app, and the ChatGPT knot slowly turns.
 - Tapping a card with nothing waiting opens a working conversation; tap again while that app is in front to
   cycle through the others. With nothing working either, it brings the app (Claude or ChatGPT) to the front.
+- Double-tap a card to switch its scene to the next one (never the other card's). It lasts until the next daily pick
+  or a reboot; a single tap therefore opens the app about 0.3 s after the touch.
 
 ## How it works
 

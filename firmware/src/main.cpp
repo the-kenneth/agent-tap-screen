@@ -59,6 +59,8 @@ struct Account {
 
 static Account accounts[MAX_ACCOUNTS];
 static int accountCount = 0;
+static int dailyScene[MAX_ACCOUNTS] = {-1, -1};   // the scene the bridge last sent for each card
+static int pickedScene[MAX_ACCOUNTS] = {-1, -1};  // a double-tapped scene, until the bridge's pick changes
 static uint32_t hostEpoch = 0;
 static uint32_t receivedAtMs = 0;
 static bool haveData = false;
@@ -86,7 +88,11 @@ static void handleLine(const String &text) {
     acc.waiting = a["waiting"] | 0;
     acc.working = a["working"] | 0;
     acc.provider = strcasecmp(acc.name, "claude") == 0 ? CLAUDE : strcasecmp(acc.name, "codex") == 0 ? CODEX : OTHER;
-    acc.scene = constrain(a["scene"] | (acc.provider == CODEX ? TEAL_NIGHT : SUNSET), 0, SCENE_COUNT - 1);
+    int daily = constrain(a["scene"] | (acc.provider == CODEX ? TEAL_NIGHT : SUNSET), 0, SCENE_COUNT - 1);
+    int slot = accountCount - 1;
+    if (dailyScene[slot] != daily) pickedScene[slot] = -1;  // a new daily pick replaces a tapped one
+    dailyScene[slot] = daily;
+    acc.scene = pickedScene[slot] >= 0 ? pickedScene[slot] : daily;
     acc.windowCount = 0;
     for (JsonObject w : a["windows"].as<JsonArray>()) {
       if (acc.windowCount >= MAX_WINDOWS) break;
@@ -1421,15 +1427,44 @@ static void animateScene() {
   tft.endWrite();
 }
 
+static int cardAt(int32_t y) {
+  for (int i = 0; i < accountCount; i++)
+    if (y >= accounts[i].top && y < accounts[i].top + accounts[i].height) return i;
+  return -1;
+}
+
+// Next scene for a card, skipping the one on the other card so the two always differ.
+static void cycleScene(int card) {
+  int next = accounts[card].scene;
+  do next = (next + 1) % SCENE_COUNT;
+  while (accountCount > 1 && next == accounts[1 - card].scene);
+  pickedScene[card] = accounts[card].scene = next;
+  dirty = true;
+}
+
+// A single tap opens the card's conversation once the double-tap window has passed; a second tap on the same card
+// within it cycles the scene instead.
+static const uint32_t DOUBLE_TAP_MS = 300;
+static int pendingCard = -1;
+static uint32_t pendingSince = 0;
+
 static void handleTap(int32_t x, int32_t y) {
   Serial.printf("TOUCH %ld %ld\n", (long)x, (long)y);
-  for (int i = 0; i < accountCount; i++) {
-    const Account &acc = accounts[i];
-    if (y >= acc.top && y < acc.top + acc.height) {
-      Serial.printf("OPEN %s\n", acc.name);
-      return;
-    }
+  int card = cardAt(y);
+  if (card < 0) return;
+  if (pendingCard == card) {
+    pendingCard = -1;
+    cycleScene(card);
+  } else {
+    pendingCard = card;
+    pendingSince = millis();
   }
+}
+
+static void flushPendingTap() {
+  if (pendingCard < 0 || millis() - pendingSince < DOUBLE_TAP_MS) return;
+  if (pendingCard < accountCount) Serial.printf("OPEN %s\n", accounts[pendingCard].name);
+  pendingCard = -1;
 }
 
 // The panel's read line isn't wired, so screenshots stream each card's sprite as it is redrawn.
@@ -1470,6 +1505,7 @@ void loop() {
   bool touched = tft.getTouch(&tx, &ty);
   if (touched && !wasTouched) handleTap(tx, ty);
   wasTouched = touched;
+  flushPendingTap();
 
   // Redraw on new data, and once a minute so countdowns tick.
   static uint32_t lastDraw = 0;
