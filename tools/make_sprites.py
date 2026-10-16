@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY = 0xF81F  # transparent
-CLAUDE_ORANGE = (0xDE, 0x73, 0x56)
+CLAUDE_ORANGE = (0xF5, 0x62, 0x2D)
 CHATGPT_ICON = "/Applications/ChatGPT.app/Contents/Resources/icon-chatgpt.png"
 
 

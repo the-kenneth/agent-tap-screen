@@ -16,6 +16,8 @@ static const int MAX_WINDOWS = 4;
 static const uint32_t LINK_TIMEOUT_MS = 3 * 60 * 1000;
 static const uint32_t STALE_SECONDS = 15 * 60;
 
+// More saturated than the brand #D97757 so it holds up on the dim panel.
+static const uint32_t CLAUDE_ORANGE = 0xF5622D;
 static uint16_t rgb(uint32_t hex) { return lgfx::color565(hex >> 16, (hex >> 8) & 0xFF, hex & 0xFF); }
 
 static const uint32_t BACKGROUND = 0x0a0f2c;
@@ -424,7 +426,7 @@ static void scene(const Account &acc, uint32_t t) {
 }
 
 static uint32_t accentFor(int provider) {
-  return provider == CLAUDE ? 0xD97757 : provider == CODEX ? 0x4049fe : 0xb388ff;
+  return provider == CLAUDE ? CLAUDE_ORANGE : provider == CODEX ? 0x4049fe : 0xb388ff;
 }
 
 static void frame(uint32_t accent, int h) {
@@ -582,7 +584,7 @@ static void drawWaiting(const char *message) {
   drawBackground();
   if (!canvasFor(60)) return;
   canvas.fillScreen(rgb(BACKGROUND));
-  frame(0xD97757, 60);
+  frame(CLAUDE_ORANGE, 60);
   pixelText(W / 2 + textWidth("USAGE SCREEN", 2) / 2, 14, "USAGE SCREEN", 2, CREAM, 1, true);
   pixelText(W / 2 + textWidth(message, 1) / 2, 36, message, 1, SOFT, 0, true);
   pushCanvas(0, 0, W, 60, H / 2 - 30);
