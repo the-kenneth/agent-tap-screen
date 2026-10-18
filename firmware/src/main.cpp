@@ -1094,7 +1094,7 @@ static void frame(uint32_t accent, int h) {
 // Inside of the logo box. While a turn is in progress the logo animates: Clawd types on his laptop as he does in
 // the Claude desktop app, and the ChatGPT knot turns.
 static const int LOGO_X = 14, LOGO_Y = 12, LOGO_SIZE = 40;
-static const uint32_t KNOT_STEP_MS = 83;
+static const uint32_t KNOT_STEP_MS = 30;
 static LGFX_Sprite logoPatch(&tft);
 
 // -1 is the resting logo.
