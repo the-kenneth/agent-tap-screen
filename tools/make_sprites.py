@@ -122,6 +122,12 @@ def knot_turn(path, frames):
     """
     big = Image.new("L", (320, 320))
     big.paste(chatgpt_knot(path, 280).filter(ImageFilter.MaxFilter(7)), (20, 20))
+    # The icon's strands aren't quite six-fold symmetric; averaging the six turns removes the seam that would
+    # otherwise jump back each time the loop wraps.
+    turns = big
+    for k in range(1, 6):
+        turns = Image.blend(turns, big.rotate(60 * k, Image.Resampling.BICUBIC), 1 / (k + 1))
+    big = turns
     return ["".join("." if v < 9 else "0123456789ABCDEF"[round(v / 17)] for v in
                     big.rotate(-60 * i / frames, Image.Resampling.BICUBIC).resize((32, 32), Image.Resampling.BOX)
                     .tobytes()) for i in range(frames)]
