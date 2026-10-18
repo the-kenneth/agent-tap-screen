@@ -51,6 +51,7 @@ struct Account {
   int windowCount;
   int waiting;  // conversations waiting for the user
   int working;  // conversations with a turn in progress
+  uint32_t workEdgeMs;  // when working last switched between none and some
   int top, height;  // where the card was last drawn
   int horizon;      // card row where the topmost panel starts; the scene's ground begins here
   int textRight;    // right edge of the name and percentage labels
@@ -86,7 +87,9 @@ static void handleLine(const String &text) {
     strlcpy(acc.status, a["status"] | "error", sizeof(acc.status));
     acc.age = a["age"] | 0;
     acc.waiting = a["waiting"] | 0;
-    acc.working = a["working"] | 0;
+    int working = a["working"] | 0;
+    if ((working > 0) != (acc.working > 0)) acc.workEdgeMs = receivedAtMs;
+    acc.working = working;
     acc.provider = strcasecmp(acc.name, "claude") == 0 ? CLAUDE : strcasecmp(acc.name, "codex") == 0 ? CODEX : OTHER;
     int daily = constrain(a["scene"] | (acc.provider == CODEX ? TEAL_NIGHT : SUNSET), 0, SCENE_COUNT - 1);
     int slot = accountCount - 1;
@@ -1097,10 +1100,21 @@ static const int LOGO_X = 14, LOGO_Y = 12, LOGO_SIZE = 40;
 static const uint32_t KNOT_STEP_MS = 30;
 static LGFX_Sprite logoPatch(&tft);
 
-// -1 is the resting logo.
+// -1 is the resting logo. Clawd takes his laptop out, types, and puts it away again, as in the desktop app.
 static int logoFrame(const Account &acc, uint32_t t) {
+  uint32_t since = t - acc.workEdgeMs;
+  if (acc.provider == CLAUDE) {
+    if (acc.working <= 0) {
+      if (!acc.workEdgeMs) return -1;  // never worked since boot
+      int frame = CLAWD_OUT_START + since * CLAWD_OUT_FPS / 1000;
+      return frame <= CLAWD_OUT_END ? frame : -1;
+    }
+    uint32_t step = since * CLAWD_FPS / 1000;
+    int intro = CLAWD_LOOP_START - CLAWD_INTRO;
+    if (step < intro) return CLAWD_INTRO + step;
+    return CLAWD_LOOP_START + (step - intro) % (CLAWD_LOOP_END - CLAWD_LOOP_START + 1);
+  }
   if (acc.working <= 0) return -1;
-  if (acc.provider == CLAUDE) return t / (1000 / CLAWD_FPS) % CLAWD_FRAMES;
   if (acc.provider == CODEX) return t / KNOT_STEP_MS % KNOT_FRAMES;
   return -1;
 }
@@ -1108,7 +1122,7 @@ static int logoFrame(const Account &acc, uint32_t t) {
 static void drawLogo(lgfx::LovyanGFX *target, int x, int y, const Account &acc, int frame) {
   target->fillRect(x, y, LOGO_SIZE, LOGO_SIZE, rgb(INK));
   if (acc.provider == CLAUDE) {
-    const char *pixels = frame < 0 ? CLAWD_REST : CLAWD_TYPING[frame];
+    const char *pixels = CLAWD_ANIM[max(frame, 0)];
     x += (LOGO_SIZE - CLAWD_W) / 2;
     y += (LOGO_SIZE - CLAWD_H) / 2;
     for (int i = 0; i < CLAWD_W * CLAWD_H; i++)
