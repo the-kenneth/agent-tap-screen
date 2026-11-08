@@ -20,7 +20,7 @@ holds what isn't obvious from the code.
 ## Hardware facts (verified on this board)
 
 - ST7789 on HSPI: SCLK 14, MOSI 13, MISO 12, CS 15, DC 2, backlight 27. `invert = false`, `rgb_order = false`.
-- Touch CST820 at I2C 0x15 (LovyanGFX `Touch_CST816S`): SDA 33, SCL 32, RST 25, INT 21. Rotation 1 = 320×240.
+- Touch CST820 at I2C 0x15 (LovyanGFX `Touch_CST816S`): SDA 33, SCL 32, RST 25, INT 21. Rotation 3 = 320×240 (upside down from rotation 1; touch follows).
 - Serial is a CH340 at `/dev/cu.usbserial-*`. Uploads at 921600 baud fail; 460800 works.
 - RGB LED: GPIO 4/16/17 (R/G/B), active-low, LEDC channels 0-2 at 12 bits (the backlight owns channel 7). It is
   extremely bright at low duty, so `LED_PEAK` in `main.cpp` holds tiny per-provider duties tuned by eye (Claude
