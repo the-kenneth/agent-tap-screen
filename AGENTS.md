@@ -80,4 +80,4 @@ with `-v`). A double-tap's scene override lives only in firmware RAM (`pickedSce
 - Never print, log or copy tokens or credential contents; `--debug-claude` prints only plan and expiry.
 - A missing reading stays `--`; never turn unknown into 0%.
 - Live config outside the repo: `~/.claude/settings.json` hooks, `~/.codex/hooks.json` hooks,
-  `~/Library/LaunchAgents/local.usage-screen.plist` (a copy of `launchd/`).
+  `~/Library/LaunchAgents/local.usage-screen.plist` (written by `launchd/install.sh` from the template in `launchd/`).

@@ -46,11 +46,10 @@ Requirements: Python 3 (stdlib only), PlatformIO (`brew install platformio`), th
 2. **Check readings:** `python3 bridge/usage_bridge.py --once`
 3. **Run at login:**
    ```bash
-   cp launchd/local.usage-screen.plist ~/Library/LaunchAgents/
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.usage-screen.plist
-   launchctl kickstart gui/$(id -u)/local.usage-screen
+   launchd/install.sh
    ```
-   Log: `~/Library/Logs/usage-screen.log`.
+   It fills this checkout's path and your `python3` into `launchd/usage-screen.plist`, installs it as
+   `~/Library/LaunchAgents/local.usage-screen.plist` and starts it. Log: `~/Library/Logs/usage-screen.log`.
 4. **Hooks:**
    - Claude: in `~/.claude/settings.json`, `Stop` and `Notification` run `hook.py claude wait`;
      `UserPromptSubmit`, `PreToolUse` and `PostToolUse` run `hook.py claude work`; `SessionEnd` runs `hook.py claude clear`.
@@ -65,10 +64,10 @@ The bridge holds the serial port, so stop it before flashing or taking a screens
 launchctl bootout gui/$(id -u)/local.usage-screen                                   # stop
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.usage-screen.plist    # load
 launchctl kickstart -k gui/$(id -u)/local.usage-screen                              # start (launchd can leave a
-                                                                                          # fresh load unstarted), or
-                                                                                          # restart after bridge edits
-python3 bridge/screenshot.py screen.png                                                   # capture the cards as a PNG
-python3 bridge/usage_bridge.py --debug-claude                                             # raw Claude usage JSON
+                                                                                    # fresh load unstarted), or
+                                                                                    # restart after bridge edits
+python3 bridge/screenshot.py screen.png                                             # capture the cards as a PNG
+python3 bridge/usage_bridge.py --debug-claude                                       # raw Claude usage JSON
 ```
 
 ## Credits
