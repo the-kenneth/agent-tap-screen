@@ -1,7 +1,6 @@
 # Agent Tap Screen — agent notes
 
-Personal project (see `~/Mine/CLAUDE.md`). Read `README.md` for what it does and how to run it; this file
-holds what isn't obvious from the code.
+Read `README.md` for what it does and how to run it; this file holds what isn't obvious from the code.
 
 ## Layout
 
@@ -14,8 +13,8 @@ holds what isn't obvious from the code.
 - `bridge/usage_bridge.py` — Mac side: usage polling (background thread), working/waiting folders, the daily scene
   pick, serial I/O.
 - `bridge/hook.py` — agent hook; must stay silent and always exit 0 so it can never block an agent.
-- `bridge/screenshot.py` — sends one live reading, then captures the cards to a PNG; `--scenes 2,3` picks the scenes. `--demo calm|busy|alert|low` sends made-up
-  readings instead (the README pictures in `docs/images/` come from these); `--hold` keeps one on screen for photos.
+- `bridge/screenshot.py` — sends one live reading, then captures the cards to a PNG; `--scenes 2,3` picks the scenes.
+  `--demo calm|busy|alert|low` sends made-up readings instead (the README pictures in `docs/images/` come from these); `--hold` keeps one on screen for photos.
 - `bridge/statusline.sh` — optional fallback source for Claude usage; not wired up by default.
 
 ## Hardware facts (verified on this board)
@@ -61,7 +60,7 @@ with `-v`). A double-tap's scene override lives only in firmware RAM (`pickedSce
     `claude -p`, at most every 30 min, to make it renew.
 - **Codex usage:** `codex app-server` JSON-RPC `account/rateLimits/read`, using the binary bundled in
   `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` (there's no `codex` on PATH).
-  This account only reports a weekly window.
+  It may report only a weekly window.
 - **Waiting conversations:** hooks write `~/.cache/usage-screen/waiting/<provider>-<id>.json`; the bridge
   drops entries older than 12 h and deletes an entry when it opens it.
 - **Working conversations:** `work` hooks write the same record to `working/`, refreshed on every prompt and tool
