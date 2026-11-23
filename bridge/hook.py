@@ -12,8 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-WAITING_DIR = Path("~/.cache/usage-screen/waiting").expanduser()
-WORKING_DIR = Path("~/.cache/usage-screen/working").expanduser()
+WAITING_DIR = Path("~/.cache/agent-tap-screen/waiting").expanduser()
+WORKING_DIR = Path("~/.cache/agent-tap-screen/working").expanduser()
 APP_NAMES = {"claude": "Claude", "codex": "ChatGPT"}
 CLAUDE_LOGS = [Path(f"~/Library/Logs/Claude/{name}.log").expanduser() for name in ("main", "main1")]
 FOCUS_RE = re.compile(rb"setFocusedSession: sessionId=(\S+)")

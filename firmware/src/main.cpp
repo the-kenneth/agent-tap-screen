@@ -1499,7 +1499,7 @@ void setup() {
   tft.setBrightness(255);
   line.reserve(1024);
   render();
-  Serial.println("{\"hello\":\"usage-screen\"}");
+  Serial.println("{\"hello\":\"agent-tap-screen\"}");
 }
 
 void loop() {

@@ -53,22 +53,22 @@ The easiest way is to let an agent do it. Clone the repo, plug in the board, and
 
 1. Flash: `brew install platformio && cd firmware && pio run -t upload --upload-port /dev/cu.usbserial-*`
 2. Check readings: `python3 bridge/usage_bridge.py --once`
-3. Run at login: `launchd/install.sh` (log: `~/Library/Logs/usage-screen.log`)
+3. Run at login: `launchd/install.sh` (log: `~/Library/Logs/agent-tap-screen.log`)
 4. Hooks:
    - Claude (`~/.claude/settings.json`): `Stop` and `Notification` → `hook.py claude wait`; `UserPromptSubmit`,
      `PreToolUse` and `PostToolUse` → `hook.py claude work`; `SessionEnd` → `hook.py claude clear`.
    - Codex: `python3 bridge/add_codex_hooks.py`, then approve the hooks in Codex.
 
 Stop the bridge before flashing or `bridge/screenshot.py` (it holds the serial port):
-`launchctl bootout gui/$(id -u)/local.usage-screen`, then `launchd/install.sh` to start it again.
+`launchctl bootout gui/$(id -u)/local.agent-tap-screen`, then `launchd/install.sh` to start it again.
 </details>
 
 ## How it works
 
 ```
-agent hooks ──► ~/.cache/usage-screen/{working,waiting}/ ──┐
-usage APIs ────────────────────────────────────────────────┼─► bridge (LaunchAgent) ──USB──► ESP32
-                       open claude:// / codex:// ◄─────────┘◄──── tap ◄────────────────────┘
+agent hooks ──► ~/.cache/agent-tap-screen/{working,waiting}/ ──┐
+usage APIs ────────────────────────────────────────────────────┼─► bridge (LaunchAgent) ──USB──► ESP32
+                           open claude:// / codex:// ◄─────────┘◄──── tap ◄────────────────────┘
 ```
 
 - `bridge/usage_bridge.py` polls usage, watches the hook folders, sends the screen one JSON line, opens chats on tap.

@@ -61,7 +61,7 @@ with `-v`). A double-tap's scene override lives only in firmware RAM (`pickedSce
 - **Codex usage:** `codex app-server` JSON-RPC `account/rateLimits/read`, using the binary bundled in
   `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` (there's no `codex` on PATH).
   It may report only a weekly window.
-- **Waiting conversations:** hooks write `~/.cache/usage-screen/waiting/<provider>-<id>.json`; the bridge
+- **Waiting conversations:** hooks write `~/.cache/agent-tap-screen/waiting/<provider>-<id>.json`; the bridge
   drops entries older than 12 h and deletes an entry when it opens it.
 - **Working conversations:** `work` hooks write the same record to `working/`, refreshed on every prompt and tool
   call; the bridge drops entries older than 20 min, which only happens when an agent dies before its `Stop`.
@@ -80,4 +80,4 @@ with `-v`). A double-tap's scene override lives only in firmware RAM (`pickedSce
 - Never print, log or copy tokens or credential contents; `--debug-claude` prints only plan and expiry.
 - A missing reading stays `--`; never turn unknown into 0%.
 - Live config outside the repo: `~/.claude/settings.json` hooks, `~/.codex/hooks.json` hooks,
-  `~/Library/LaunchAgents/local.usage-screen.plist` (written by `launchd/install.sh` from the template in `launchd/`).
+  `~/Library/LaunchAgents/local.agent-tap-screen.plist` (written by `launchd/install.sh` from the template in `launchd/`).

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>local.usage-screen</string>
+  <string>local.agent-tap-screen</string>
   <key>ProgramArguments</key>
   <array>
     <string>__PYTHON__</string>
@@ -22,8 +22,8 @@
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/usage-screen.log</string>
+  <string>__HOME__/Library/Logs/agent-tap-screen.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/usage-screen.log</string>
+  <string>__HOME__/Library/Logs/agent-tap-screen.log</string>
 </dict>
 </plist>

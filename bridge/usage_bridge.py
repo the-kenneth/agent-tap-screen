@@ -21,10 +21,10 @@ from pathlib import Path
 from hook import APP_NAMES, claude_focused_session
 
 CODEX_BIN = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
-STATUSLINE_CACHE = Path("~/.cache/usage-screen/claude-statusline.json").expanduser()
-WAITING_DIR = Path("~/.cache/usage-screen/waiting").expanduser()
+STATUSLINE_CACHE = Path("~/.cache/agent-tap-screen/claude-statusline.json").expanduser()
+WAITING_DIR = Path("~/.cache/agent-tap-screen/waiting").expanduser()
 WAIT_EXPIRY = 12 * 3600
-WORKING_DIR = Path("~/.cache/usage-screen/working").expanduser()
+WORKING_DIR = Path("~/.cache/agent-tap-screen/working").expanduser()
 # Every prompt and tool call refreshes an entry, so this only ends a turn whose agent died before its Stop hook.
 WORK_EXPIRY = 20 * 60
 CLAUDE_WINDOWS = (("five_hour", "5H"), ("seven_day", "WEEK"))
@@ -146,7 +146,7 @@ def codex_usage():
                     break
             raise RuntimeError("codex timeout")
 
-        call(1, "initialize", {"clientInfo": {"name": "usage_screen", "title": "Usage Screen", "version": "0.1"},
+        call(1, "initialize", {"clientInfo": {"name": "agent_tap_screen", "title": "Agent Tap Screen", "version": "0.1"},
                                "capabilities": {}})
         process.stdin.write('{"method":"initialized","params":{}}\n')
         process.stdin.flush()

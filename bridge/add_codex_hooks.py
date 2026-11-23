@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the usage-screen working and waiting hooks to Codex's hooks.json, keeping every existing hook (backs it up first)."""
+"""Add the agent-tap-screen working and waiting hooks to Codex's hooks.json, keeping every existing hook (backs it up first)."""
 import json
 import shutil
 import sys
@@ -12,7 +12,7 @@ def main():
     path = Path(sys.argv[1] if len(sys.argv) > 1 else "~/.codex/hooks.json").expanduser()
     raw = path.read_text() if path.exists() else "{}"
     if path.exists():
-        shutil.copy(path, str(path) + ".bak-usage-screen")
+        shutil.copy(path, str(path) + ".bak-agent-tap-screen")
     data = json.loads(raw)
     hooks = data.setdefault("hooks", {})
     for event, action in (("Stop", "wait"), ("UserPromptSubmit", "work"), ("PreToolUse", "work"), ("PostToolUse", "work")):
