@@ -2,14 +2,10 @@
 
 <p align="center">A touch screen on your desk that shows when Claude or Codex needs you. Tap it to jump to that chat.</p>
 
-<!-- Photos: add them to docs/images/ and uncomment.
 <p align="center">
-  <img src="docs/images/photo-1.jpg" width="420" alt="Agent Tap Screen on a desk">
-  <img src="docs/images/photo-2.jpg" width="420" alt="Agent Tap Screen close up">
+  <img src="docs/images/photo-1.jpg" width="420" alt="The screen in its case, LED glowing orange: a Claude chat is waiting">
+  <img src="docs/images/photo-2.jpg" width="420" alt="LED glowing blue: two Codex chats are waiting while Clawd types">
 </p>
--->
-
-<p align="center"><img src="docs/images/busy.png" width="480" alt="Clawd typing while Claude works; Codex has two chats waiting"></p>
 
 For the **Claude desktop app** and **Codex in the ChatGPT desktop app**, on macOS. Terminal sessions aren't tracked.
 
@@ -19,6 +15,8 @@ For the **Claude desktop app** and **Codex in the ChatGPT desktop app**, on macO
 - **Working:** Clawd types on his laptop, the ChatGPT knot spins. Tap to open it; tap again to cycle.
 - **Idle:** tap to bring the app to the front.
 - **LED:** breathes the app's colour while anything waits.
+
+<p align="center"><img src="docs/images/busy.png" width="480" alt="Clawd typing while Claude works; Codex has two chats waiting"></p>
 
 ## Usage at a glance
 
