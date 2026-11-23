@@ -1,4 +1,4 @@
-# Usage Screen — agent notes
+# Agent Tap Screen — agent notes
 
 Personal project (see `~/Mine/CLAUDE.md`). Read `README.md` for what it does and how to run it; this file
 holds what isn't obvious from the code.

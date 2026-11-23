@@ -1,4 +1,4 @@
-# Usage Screen
+# Agent Tap Screen
 
 A desk display for Claude and Codex usage limits, plus a nudge when a conversation is waiting for you.
 
