@@ -2,8 +2,8 @@ MIT License
 
 Copyright (c) 2026 the-kenneth
 
-Portions (the "Pixel Retro" layout and the 5x7 font in firmware/src/pixelfont.h) are adapted from token-tv
-(https://github.com/click6067-ship-it/token-tv), Copyright (c) 2026 click6067-ship-it, under the same licence.
+The 5x7 font in firmware/src/pixelfont.h is from token-tv (https://github.com/click6067-ship-it/token-tv),
+Copyright (c) 2026 click6067-ship-it, under the same licence.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

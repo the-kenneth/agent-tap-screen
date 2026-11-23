@@ -1,76 +1,84 @@
-# Agent Tap Screen
+<h1 align="center">Agent Tap Screen</h1>
 
-A desk display for Claude and Codex usage limits, plus a nudge when a conversation is waiting for you.
+<p align="center">A touch screen on your desk that shows when Claude or Codex needs you. Tap it to jump to that chat.</p>
 
-It runs on a JC2432W328C (ESP32, 2.8" 320×240 ST7789, capacitive touch) plugged into the Mac over USB.
-The look is the "Pixel Retro" face from [token-tv](https://github.com/click6067-ship-it/token-tv) (MIT).
+<!-- Photos: add them to docs/images/ and uncomment.
+<p align="center">
+  <img src="docs/images/photo-1.jpg" width="420" alt="Agent Tap Screen on a desk">
+  <img src="docs/images/photo-2.jpg" width="420" alt="Agent Tap Screen close up">
+</p>
+-->
 
-- **Claude card:** weekly limit left as the headline, the 5-hour limit in a thinner bar above it.
-- **Codex card:** weekly limit left.
-- Bars are full at 100% left and empty as you use them; colour moves green → lime → orange → red.
-- Each card sits on a small animated pixel scene: sunset, moonlit night, aurora, snowfall, moonlit sea, misty dawn,
-  Mount Fuji, Milky Way, fireflies or cherry blossom. They change daily at random, never repeating the day before.
-- A reading older than 15 minutes is marked `OLD`; a missing one shows `--`, never 0%.
-- **Waiting conversations:** a light runs round the card's frame and a red badge shows `!` (or the count).
-  Tap the card to open the longest-waiting one in the Claude desktop app or Codex.
-- **Working conversations:** the card's logo animates while an agent is mid-turn — Clawd types on his laptop as
-  he does in the Claude desktop app, and the ChatGPT knot slowly turns.
-- Tapping a card with nothing waiting opens a working conversation; tap again while that app is in front to
-  cycle through the others. With nothing working either, it brings the app (Claude or ChatGPT) to the front.
-- Double-tap a card to switch its scene to the next one (never the other card's). It lasts until the next daily pick
-  or a reboot; a single tap therefore opens the app about 0.3 s after the touch.
+<p align="center"><img src="docs/images/busy.png" width="480" alt="Clawd typing while Claude works; Codex has two chats waiting"></p>
+
+For the **Claude desktop app** and **Codex in the ChatGPT desktop app**, on macOS. Terminal sessions aren't tracked.
+
+## Tap to focus
+
+- **Waiting:** a light runs round the card and a badge shows how many chats need you. Tap to open the oldest.
+- **Working:** Clawd types on his laptop, the ChatGPT knot spins. Tap to open it; tap again to cycle.
+- **Idle:** tap to bring the app to the front.
+- **LED:** breathes the app's colour while anything waits.
+
+## Usage at a glance
+
+- **Claude:** weekly limit left, 5-hour limit in the thin bar.
+- **Codex:** weekly limit left.
+- Bars drain green → red. `OLD` after 15 min without a reading; `--` when unknown, never 0%.
+
+<p align="center">
+  <img src="docs/images/calm.png" width="320" alt="Plenty left on both cards">
+  <img src="docs/images/low.png" width="320" alt="Claude nearly spent; Codex reading marked OLD">
+</p>
+
+## Scenes
+
+- Ten animated pixel backdrops; a new pair each day.
+- Double-tap a card for the next one.
+
+<p align="center"><img src="docs/images/scenes.png" width="720" alt="All ten scenes"></p>
+
+## Setup
+
+You need:
+- a JC2432W328C board (ESP32, 2.8" 320×240 capacitive touch) and a USB-A→C cable;
+- a Mac with the Claude and/or ChatGPT desktop app;
+- Claude Code signed in.
+
+The easiest way is to let an agent do it. Clone the repo, plug in the board, and paste this into Claude Code or Codex:
+
+> Set up this repo for me. Read README.md and AGENTS.md, flash the firmware to the board on USB, install the
+> bridge LaunchAgent, add the Claude Code and Codex hooks, then take a screenshot to check it works.
+
+<details>
+<summary>By hand</summary>
+
+1. Flash: `brew install platformio && cd firmware && pio run -t upload --upload-port /dev/cu.usbserial-*`
+2. Check readings: `python3 bridge/usage_bridge.py --once`
+3. Run at login: `launchd/install.sh` (log: `~/Library/Logs/usage-screen.log`)
+4. Hooks:
+   - Claude (`~/.claude/settings.json`): `Stop` and `Notification` → `hook.py claude wait`; `UserPromptSubmit`,
+     `PreToolUse` and `PostToolUse` → `hook.py claude work`; `SessionEnd` → `hook.py claude clear`.
+   - Codex: `python3 bridge/add_codex_hooks.py`, then approve the hooks in Codex.
+
+Stop the bridge before flashing or `bridge/screenshot.py` (it holds the serial port):
+`launchctl bootout gui/$(id -u)/local.usage-screen`, then `launchd/install.sh` to start it again.
+</details>
 
 ## How it works
 
 ```
-Claude Code / Codex hooks ──► ~/.cache/usage-screen/{working,waiting}/*.json ─┐
-Claude usage API, codex app-server ──────────────────────────────────────────┼─► bridge (LaunchAgent) ──USB serial──► ESP32
-                                                  open claude:// / codex:// ◄┘◄── "OPEN <name>" on tap ◄──────────────┘
+agent hooks ──► ~/.cache/usage-screen/{working,waiting}/ ──┐
+usage APIs ────────────────────────────────────────────────┼─► bridge (LaunchAgent) ──USB──► ESP32
+                       open claude:// / codex:// ◄─────────┘◄──── tap ◄────────────────────┘
 ```
 
-- `bridge/usage_bridge.py` reads usage every 2 minutes, watches the working and waiting folders, sends one JSON line
-  to the screen on change (and every 30 s), and opens conversations when the screen asks.
-- `bridge/hook.py` is the hook both agents call: `work` on each prompt and tool call, `wait` when a turn
-  ends or needs permission, `clear` when the session ends.
-- `firmware/` draws everything; the Mac only sends numbers.
-
-## Setup
-
-Requirements: Python 3 (stdlib only), PlatformIO (`brew install platformio`), the ChatGPT app (its bundled
-`codex` CLI), and a signed-in Claude Code (`claude` then `/login`).
-
-1. **Flash** (use a USB-A→C cable; C→C may not power the board):
-   ```bash
-   cd firmware && pio run -t upload --upload-port /dev/cu.usbserial-*
-   ```
-2. **Check readings:** `python3 bridge/usage_bridge.py --once`
-3. **Run at login:**
-   ```bash
-   launchd/install.sh
-   ```
-   It fills this checkout's path and your `python3` into `launchd/usage-screen.plist`, installs it as
-   `~/Library/LaunchAgents/local.usage-screen.plist` and starts it. Log: `~/Library/Logs/usage-screen.log`.
-4. **Hooks:**
-   - Claude: in `~/.claude/settings.json`, `Stop` and `Notification` run `hook.py claude wait`;
-     `UserPromptSubmit`, `PreToolUse` and `PostToolUse` run `hook.py claude work`; `SessionEnd` runs `hook.py claude clear`.
-   - Codex: `Stop` runs `hook.py codex wait`; `UserPromptSubmit`, `PreToolUse` and `PostToolUse` run `hook.py codex work`.
-     Install with `python3 bridge/add_codex_hooks.py`, then approve the new hooks in Codex.
-
-## Everyday commands
-
-The bridge holds the serial port, so stop it before flashing or taking a screenshot:
-
-```bash
-launchctl bootout gui/$(id -u)/local.usage-screen                                   # stop
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.usage-screen.plist    # load
-launchctl kickstart -k gui/$(id -u)/local.usage-screen                              # start (launchd can leave a
-                                                                                    # fresh load unstarted), or
-                                                                                    # restart after bridge edits
-python3 bridge/screenshot.py screen.png                                             # capture the cards as a PNG
-python3 bridge/usage_bridge.py --debug-claude                                       # raw Claude usage JSON
-```
+- `bridge/usage_bridge.py` polls usage, watches the hook folders, sends the screen one JSON line, opens chats on tap.
+- `bridge/hook.py` is the agent hook. It never blocks: silent, always exits 0.
+- `firmware/` draws everything.
 
 ## Credits
 
-Pixel Retro layout and 5×7 font come from token-tv (MIT). Clawd and his laptop animation are read from the
-Claude desktop app; the ChatGPT knot is thresholded from the ChatGPT app's own icon.
+The look started from [token-tv](https://github.com/click6067-ship-it/token-tv)'s Pixel Retro face and has since
+diverged; the 5×7 font is still theirs (MIT). Clawd and the ChatGPT knot are read from the installed apps.
+Not affiliated with Anthropic or OpenAI.

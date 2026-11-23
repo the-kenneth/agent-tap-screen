@@ -38,22 +38,48 @@ def write_png(path, width, height, rgb565, swap):
                   + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b""))
 
 
+def demo_rows(state, now, scenes):
+    """Made-up readings for README pictures, so they show each state without touching real usage."""
+    def window(label, used, hours):
+        return {"label": label, "used": used, "resets": now + hours * 3600}
+
+    def card(name, color, scene, windows, **extra):
+        return {"name": name, "color": color, "status": "ok", "age": 60, "scene": scene, "waiting": 0,
+                "working": 0, "windows": windows, **extra}
+
+    if state == "calm":
+        claude, codex = [window("5H", 18, 3), window("WEEK", 31, 90)], [window("WEEK", 12, 120)]
+        claude_extra, codex_extra = {}, {}
+    elif state == "busy":
+        claude, codex = [window("5H", 64, 1), window("WEEK", 58, 40)], [window("WEEK", 47, 70)]
+        claude_extra, codex_extra = {"working": 1}, {"waiting": 2}
+    else:  # low: nearly spent, and Codex's reading is an hour old
+        claude, codex = [window("5H", 96, 1), window("WEEK", 88, 20)], [window("WEEK", 74, 30)]
+        claude_extra, codex_extra = {}, {"age": 3600}
+    return [card("Claude", "#D97757", scenes[0], claude, **claude_extra),
+            card("Codex", "#10A37F", scenes[1], codex, **codex_extra)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out", nargs="?", default="screen.png")
     parser.add_argument("--scenes", help="scene numbers for the two cards, e.g. 2,3 (default: today's)")
+    parser.add_argument("--demo", choices=["calm", "busy", "low"], help="show made-up readings instead of live ones")
     args = parser.parse_args()
     scenes = [int(s) for s in args.scenes.split(",")] if args.scenes else bridge.daily_scenes(date.today())
-    accounts = [bridge.Account("Claude", "#D97757", bridge.fetch_claude(True)),
-                bridge.Account("Codex", "#10A37F", bridge.fetch_codex())]
-    for account in accounts:
-        account.refresh(True)
     now = int(time.time())
+    if args.demo:
+        rows = demo_rows(args.demo, now, scenes)
+    else:
+        accounts = [bridge.Account("Claude", "#D97757", bridge.fetch_claude(True)),
+                    bridge.Account("Codex", "#10A37F", bridge.fetch_codex())]
+        for account in accounts:
+            account.refresh(True)
+        rows = bridge.screen_rows(accounts, now, scenes)[0]
     fd = bridge.open_serial(bridge.find_port())
     time.sleep(2.5)
-    rows = bridge.screen_rows(accounts, now, scenes)[0]
     os.write(fd, (json.dumps({"now": now, "accounts": rows}) + "\n").encode())
-    time.sleep(2)
+    time.sleep(4 if args.demo else 2)  # demo shots catch Clawd typing, past his laptop take-out
     termios_flush(fd)
     os.write(fd, b"SHOT\n")
     deadline = time.monotonic() + 40
