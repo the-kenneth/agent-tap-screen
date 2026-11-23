@@ -14,8 +14,8 @@ holds what isn't obvious from the code.
 - `bridge/usage_bridge.py` — Mac side: usage polling (background thread), working/waiting folders, the daily scene
   pick, serial I/O.
 - `bridge/hook.py` — agent hook; must stay silent and always exit 0 so it can never block an agent.
-- `bridge/screenshot.py` — sends one live reading, then captures the cards to a PNG; `--scenes 2,3` picks the scenes. `--demo calm|busy|low` sends made-up
-  readings instead; the README pictures in `docs/images/` come from these.
+- `bridge/screenshot.py` — sends one live reading, then captures the cards to a PNG; `--scenes 2,3` picks the scenes. `--demo calm|busy|alert|low` sends made-up
+  readings instead (the README pictures in `docs/images/` come from these); `--hold` keeps one on screen for photos.
 - `bridge/statusline.sh` — optional fallback source for Claude usage; not wired up by default.
 
 ## Hardware facts (verified on this board)

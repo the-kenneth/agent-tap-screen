@@ -53,6 +53,9 @@ def demo_rows(state, now, scenes):
     elif state == "busy":
         claude, codex = [window("5H", 64, 1), window("WEEK", 58, 40)], [window("WEEK", 47, 70)]
         claude_extra, codex_extra = {"working": 1}, {"waiting": 2}
+    elif state == "alert":  # Claude waiting and working, so the LED breathes orange while Clawd types
+        claude, codex = [window("5H", 42, 2), window("WEEK", 36, 60)], [window("WEEK", 22, 100)]
+        claude_extra, codex_extra = {"waiting": 1, "working": 1}, {}
     else:  # low: nearly spent, and Codex's reading is an hour old
         claude, codex = [window("5H", 96, 1), window("WEEK", 88, 20)], [window("WEEK", 74, 30)]
         claude_extra, codex_extra = {}, {"age": 3600}
@@ -64,7 +67,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out", nargs="?", default="screen.png")
     parser.add_argument("--scenes", help="scene numbers for the two cards, e.g. 2,3 (default: today's)")
-    parser.add_argument("--demo", choices=["calm", "busy", "low"], help="show made-up readings instead of live ones")
+    parser.add_argument("--demo", choices=["calm", "busy", "alert", "low"],
+                        help="show made-up readings instead of live ones")
+    parser.add_argument("--hold", action="store_true", help="keep showing the reading until Ctrl-C; no capture")
     args = parser.parse_args()
     scenes = [int(s) for s in args.scenes.split(",")] if args.scenes else bridge.daily_scenes(date.today())
     now = int(time.time())
@@ -79,6 +84,11 @@ def main():
     fd = bridge.open_serial(bridge.find_port())
     time.sleep(2.5)
     os.write(fd, (json.dumps({"now": now, "accounts": rows}) + "\n").encode())
+    if args.hold:
+        print("holding; Ctrl-C to stop")
+        while True:  # resend as the bridge does, with ages fixed so nothing drifts to OLD
+            time.sleep(30)
+            os.write(fd, (json.dumps({"now": int(time.time()), "accounts": rows}) + "\n").encode())
     time.sleep(4 if args.demo else 2)  # demo shots catch Clawd typing, past his laptop take-out
     termios_flush(fd)
     os.write(fd, b"SHOT\n")
